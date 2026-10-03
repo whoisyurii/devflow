@@ -1,0 +1,173 @@
+import AppKit
+import Observation
+import Security
+import UserNotifications
+
+@MainActor @Observable
+final class BridgeModel {
+    static let shared = BridgeModel()
+    var snapshot = Snapshot()
+    var error = ""
+    var ready = false
+    var hookPreview = ""
+    @ObservationIgnored private var process: Process?
+    @ObservationIgnored private var input: FileHandle?
+    @ObservationIgnored private var buffer = Data()
+    @ObservationIgnored private var pending: [String: CheckedContinuation<Data, Error>] = [:]
+
+    var unread: Int { snapshot.activity.filter { !$0.read }.count }
+    var active: Int { snapshot.sessions.filter(\.active).count }
+    var busy: Bool { ["connecting", "refreshing"].contains(snapshot.connection) }
+
+    func start() {
+        guard process == nil else { return }
+        guard let node = Self.findNode() else {
+            error = "Node.js 22 or later is required. Install it, then relaunch DevFlow."
+            return
+        }
+        guard let root = Bundle.main.resourceURL?.appendingPathComponent("bridge"),
+              FileManager.default.fileExists(atPath: root.appendingPathComponent("main.mjs").path) else {
+            error = "The local bridge is missing. Rebuild DevFlow with scripts/build.sh."
+            return
+        }
+        let child = Process()
+        child.executableURL = node
+        child.arguments = [root.appendingPathComponent("main.mjs").path]
+        child.currentDirectoryURL = root
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = node.deletingLastPathComponent().path + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (environment["PATH"] ?? "")
+        child.environment = environment
+        let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
+        child.standardInput = stdin; child.standardOutput = stdout; child.standardError = stderr
+        input = stdin.fileHandleForWriting
+        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { handle.readabilityHandler = nil; return }
+            Task { @MainActor [weak self] in self?.receive(data) }
+        }
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            if handle.availableData.isEmpty { handle.readabilityHandler = nil }
+        }
+        child.terminationHandler = { [weak self] child in
+            let status = child.terminationStatus
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.ready = false; self.process = nil; self.input = nil
+                if status != 0 { self.error = "The local bridge stopped (exit \(status)). Relaunch DevFlow to reconnect." }
+                for continuation in self.pending.values { continuation.resume(throwing: BridgeError.message("Local bridge stopped.")) }
+                self.pending.removeAll()
+            }
+        }
+        do { try child.run(); process = child }
+        catch { self.error = "Could not start the local bridge: \(error.localizedDescription)" }
+    }
+    func stop() { input?.closeFile(); input = nil }
+    private func receive(_ data: Data) {
+        buffer.append(data)
+        while let newline = buffer.firstIndex(of: 10) {
+            let line = Data(buffer[..<newline]); buffer.removeSubrange(...newline)
+            do {
+                guard let object = try JSONSerialization.jsonObject(with: line) as? [String: Any], let type = object["type"] as? String else { continue }
+                if type == "snapshot", let state = object["data"] {
+                    let json = try JSONSerialization.data(withJSONObject: state)
+                    snapshot = try JSONDecoder().decode(Snapshot.self, from: json)
+                    ready = true
+                    NotificationCenter.default.post(name: .devflowStateChanged, object: nil)
+                } else if type == "notice", let value = object["data"] {
+                    let entry = try JSONDecoder().decode(Activity.self, from: JSONSerialization.data(withJSONObject: value))
+                    notify(entry)
+                } else if type == "fatal" {
+                    error = object["message"] as? String ?? "Local bridge failed."
+                } else if type == "response", let id = object["id"] as? String, let continuation = pending.removeValue(forKey: id) {
+                    if let message = object["error"] as? String { continuation.resume(throwing: BridgeError.message(message)) }
+                    else { continuation.resume(returning: try JSONSerialization.data(withJSONObject: object["result"] ?? NSNull(), options: .fragmentsAllowed)) }
+                }
+            } catch { self.error = "Could not read local state: \(error.localizedDescription)" }
+        }
+    }
+    func request(_ method: String, params: [String: Any] = [:]) async throws -> Data {
+        guard let input else { throw BridgeError.message("The local bridge is not running.") }
+        let id = UUID().uuidString
+        var data = try JSONSerialization.data(withJSONObject: ["id": id, "method": method, "params": params])
+        data.append(10)
+        return try await withCheckedThrowingContinuation { continuation in
+            pending[id] = continuation
+            do { try input.write(contentsOf: data) }
+            catch { pending.removeValue(forKey: id)?.resume(throwing: error) }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(180))
+                self?.pending.removeValue(forKey: id)?.resume(throwing: BridgeError.message("The request timed out. Check Azure sign-in or disconnect and retry."))
+            }
+        }
+    }
+    func perform(_ method: String, params: [String: Any] = [:]) {
+        Task { do { _ = try await request(method, params: params) } catch { self.error = error.localizedDescription } }
+    }
+    func save(_ settings: Settings) async throws {
+        let data = try JSONEncoder().encode(settings)
+        let params = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        _ = try await request("configure", params: params)
+    }
+    func previewHooks() async {
+        do { let data = try await request("previewHooks"); hookPreview = try JSONDecoder().decode(String.self, from: data) }
+        catch { self.error = error.localizedDescription }
+    }
+    func installHooks() async {
+        do { _ = try await request("installHooks"); hookPreview = "" }
+        catch { self.error = error.localizedDescription }
+    }
+    func openIsland(section: String? = nil) {
+        if section == "activity" { AppState.shared.show(.inbox) }
+        NotificationCenter.default.post(name: .devflowOpenIsland, object: nil)
+    }
+    func openActivity(_ activity: Activity) {
+        perform("markRead", params: ["id": activity.id])
+        if !activity.sessionID.isEmpty {
+            AppState.shared.showSession(activity.sessionID)
+            openIsland()
+        } else { openWeb(activity.url) }
+    }
+    func openWeb(_ string: String) {
+        if let url = safeWebURL(string) { NSWorkspace.shared.open(url) }
+    }
+    func requestNotifications() {
+        Task {
+            do { _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) }
+            catch { self.error = error.localizedDescription }
+        }
+    }
+    private func notify(_ entry: Activity) {
+        NotificationCenter.default.post(name: .devflowNotice, object: entry)
+        let content = UNMutableNotificationContent()
+        content.title = entry.title; content.body = String(entry.body.prefix(200))
+        content.userInfo = ["activityID": entry.id]
+        let request = UNNotificationRequest(identifier: entry.id, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { _ in }
+    }
+    func savePAT(_ secret: String, organization: String) throws {
+        guard !secret.isEmpty, !organization.isEmpty else { throw BridgeError.message("Enter an organization and PAT first.") }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "devflow.azure-devops", kSecAttrAccount as String: organization]
+        let value = [kSecValueData as String: Data(secret.utf8)]
+        let status = SecItemUpdate(query as CFDictionary, value as CFDictionary)
+        if status == errSecItemNotFound {
+            let addStatus = SecItemAdd(query.merging(value) { _, new in new } as CFDictionary, nil)
+            if addStatus != errSecSuccess { throw BridgeError.message("Could not save the PAT to Keychain (\(addStatus)).") }
+        } else if status != errSecSuccess { throw BridgeError.message("Could not update Keychain (\(status)).") }
+    }
+    private static func findNode() -> URL? {
+        let fm = FileManager.default
+        var candidates: [String] = []
+        if let path = ProcessInfo.processInfo.environment["PATH"] { candidates += path.split(separator: ":").map { String($0) + "/node" } }
+        candidates += ["/opt/homebrew/bin/node", "/usr/local/bin/node"]
+        let versions = fm.homeDirectoryForCurrentUser.appendingPathComponent(".nvm/versions/node")
+        if let entries = try? fm.contentsOfDirectory(atPath: versions.path) {
+            candidates += entries.sorted { $0.compare($1, options: .numeric) == .orderedDescending }.map { versions.appendingPathComponent($0 + "/bin/node").path }
+        }
+        return candidates.first { fm.isExecutableFile(atPath: $0) }.map { URL(fileURLWithPath: $0) }
+    }
+}
+enum BridgeError: LocalizedError { case message(String); var errorDescription: String? { if case let .message(value) = self { return value }; return nil } }
+extension Notification.Name {
+    static let devflowOpenIsland = Notification.Name("devflow.openIsland")
+    static let devflowStateChanged = Notification.Name("devflow.stateChanged")
+}
