@@ -17,6 +17,7 @@ async function collect(directory, depth = 0) {
   return files;
 }
 export function historyEvents(lines, agent, path) {
+  if (agent === 'codex' && auxiliaryCodexSession(lines)) return [];
   const events = []; let id = ''; let cwd = ''; let branch = ''; let turn = '';
   const emit = (event, timestamp, extra = {}) => {
     if (id) events.push({ agent, session_id: id, cwd, branch, timestamp, transcript_path: path,
@@ -30,6 +31,11 @@ export function historyEvents(lines, agent, path) {
       if (r.type === 'turn_context') { turn = p.turn_id || turn; cwd = p.cwd || cwd; }
       if (r.type === 'event_msg' && p.type === 'task_started') { turn = p.turn_id || turn; emit('PreToolUse', r.timestamp, { tool_name: 'Session active' }); }
       if (r.type === 'event_msg' && p.type === 'user_message') emit('UserPromptSubmit', r.timestamp, { prompt: p.message || '' });
+      if (r.type === 'response_item' && p.type === 'message' && p.role === 'user') {
+        const prompt = (p.content || []).filter(x => x.type === 'input_text').map(x => x.text).join('\n').trim();
+        if (prompt && !prompt.startsWith('# AGENTS.md') && !prompt.startsWith('<environment_context>') && !prompt.startsWith('<permissions instructions>'))
+          emit('UserPromptSubmit', r.timestamp, { prompt });
+      }
       if (r.type === 'event_msg' && p.type === 'task_complete') { turn = p.turn_id || turn; emit('Stop', r.timestamp, { last_assistant_message: p.last_agent_message || p.last_assistant_message || '' }); }
       if (r.type === 'event_msg' && ['turn_aborted','task_interrupted'].includes(p.type)) emit('Interrupt', r.timestamp);
       if (r.type === 'response_item' && p.type === 'message' && p.role === 'assistant' && p.phase === 'final_answer')
@@ -46,6 +52,12 @@ export function historyEvents(lines, agent, path) {
     }
   }
   return events;
+}
+function auxiliaryCodexSession(lines) {
+  for (const line of lines) {
+    try { const row=JSON.parse(line); if(row.type==='session_meta') return Boolean(row.payload?.source?.subagent); } catch {}
+  }
+  return false;
 }
 export class History {
   constructor(store, home = homedir()) { this.store = store; this.home = home; this.seen = new Map(); }
@@ -69,6 +81,12 @@ export class History {
               lines.shift();
               const head = Buffer.alloc(Math.min(65536,file.size)); await handle.read(head,0,head.length,0);
               lines = [...head.toString('utf8').split('\n').slice(0,-1),...lines];
+            }
+            if(agent==='codex' && auxiliaryCodexSession(lines)) {
+              // Internal reviewer/subagent transcripts are not user chats. Remove
+              // any old imported cache entry as well; never alter source transcripts.
+              this.store.state.sessions=this.store.state.sessions.filter(s=>s.source!=='history'||s.transcriptPath!==file.path);
+              continue;
             }
             for (const event of historyEvents(lines,agent,file.path)) this.store.ingest(event,{historical:true});
           } catch {} finally { await handle?.close(); }
