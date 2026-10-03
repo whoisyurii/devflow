@@ -3,36 +3,35 @@ import assert from 'node:assert/strict';
 import { ADO } from '../bridge/ado.mjs';
 import { defaults } from '../bridge/state.mjs';
 
-test('work items use the Boards project, both identities, board types and correct links', async () => {
+test('work items use the Boards project, only the personal identity, board types and correct links', async () => {
   const ado = new ADO();
   ado.settings = { ...defaults, organization: 'example', project: 'Code', workItemProject: 'Team Boards',
-    team: 'Kanban', workItemTypes: "Activity, Bug, User Story", colleagueEmail: "o'brien@example.com", dueDateField: 'Custom.DueDate' };
+    team: 'Kanban', workItemTypes: "Activity, Bug, User Story", myEmail: "o'brien@example.com", colleagueEmail: "colleague@example.com", dueDateField: 'Custom.DueDate' };
   const calls = [];
   ado.call = async (name, args) => {
     calls.push({ name, ...args });
     if (name === 'wit_query') {
-      const shared = args.wiql.includes(' OR ');
-      return { workItems: (shared ? [1,2] : args.wiql.includes('= @me') ? [1] : [2]).map(id => ({ id })) };
+      return { workItems: (args.wiql.includes('[System.CreatedDate]') ? [2] : [1,2]).map(id => ({ id })) };
     }
     return args.ids.map(id => ({ id, fields: { 'System.Title': 'Fixture ' + id, 'System.State': 'Active',
-      'System.AssignedTo': id === 1 ? 'Me <me@example.com>' : { displayName: 'Colleague' },
+      'System.AssignedTo': id === 1 ? 'Me <me@example.com>' : { displayName: 'Me' },
       'System.ChangedDate': '2026-10-0' + id + 'T12:00:00Z' } }));
   };
   const items = await ado.workItems();
   assert.ok(calls.every(c => c.project === 'Team Boards'));
   const queries = calls.filter(c => c.name === 'wit_query');
-  assert.equal(queries.length, 5);
-  assert.ok(queries.every(c => c.team === 'Kanban' && c.timePrecision === true));
+  assert.equal(queries.length, 2);
+  assert.ok(queries.every(c => !c.team && c.timePrecision === true));
   assert.ok(queries.every(c => c.wiql.includes("[System.WorkItemType] IN ('Activity', 'Bug', 'User Story')")));
   assert.ok(queries.some(c => c.wiql.includes("= 'o''brien@example.com'")));
-  for (const field of ['System.CreatedDate','System.IterationPath','Custom.DueDate']) {
-    assert.ok(queries.find(c => c.wiql.includes('[' + field + ']')).wiql.includes("([System.AssignedTo] = @me OR [System.AssignedTo] = 'o''brien@example.com')"));
-  }
+  assert.ok(queries.every(c => c.wiql.includes("[System.AssignedTo] = 'o''brien@example.com'")));
+  assert.ok(queries.every(c => !c.wiql.includes('colleague@example.com') && !c.wiql.includes('@CurrentIteration') && !c.wiql.includes('Custom.DueDate')));
+  assert.ok(queries.every(c => c.wiql.includes("[System.State] NOT IN ('Closed', 'Done', 'Removed')")));
   assert.deepEqual(items.map(i => i.id), ['2','1']);
-  assert.deepEqual(items.find(i => i.id === '1').buckets, ['mine','today','sprint','due','ours']);
-  assert.deepEqual(items.find(i => i.id === '2').buckets, ['today','colleague','sprint','due','ours']);
+  assert.deepEqual(items.find(i => i.id === '1').buckets, ['mine']);
+  assert.deepEqual(items.find(i => i.id === '2').buckets, ['mine','today']);
   assert.equal(items.find(i => i.id === '1').assignedTo, 'Me');
-  assert.equal(items[0].assignedTo, 'Colleague');
+  assert.equal(items[0].assignedTo, 'Me');
   assert.equal(items[0].url, 'https://dev.azure.com/example/Team%20Boards/_workitems/edit/2');
   assert.equal(ado.baseURL(), 'https://dev.azure.com/example/Code');
 });

@@ -48,9 +48,8 @@ struct IntegrationCardView: View {
                 .padding(.top, 6).padding(.leading, 108).padding(.trailing, 12)
                 VStack(alignment: .leading, spacing: 4) {
                     if task.id == "work" {
-                        stat("person.2", state.snapshot.settings.colleagueEmail.isEmpty ? "Assigned to me" : "Assigned to us", count: count("ours"), section: .ours)
+                        stat("person", "Assigned to me", count: count("mine"), section: .mine)
                         stat("sun.max", "New today", count: count("today"), section: .today)
-                        stat("calendar", "This sprint", count: count("sprint"), section: .sprint)
                     } else if task.id == "inbox" {
                         Button { state.show(.inbox) } label: {
                             VStack(alignment: .leading, spacing: 4) {
@@ -86,7 +85,7 @@ struct IntegrationCardView: View {
         switch task.id {
         case "claude": state.show(.claude)
         case "codex": state.show(.codex)
-        case "work": state.show(.ours)
+        case "work": state.show(.mine)
         default: state.show(.inbox)
         }
     }
@@ -122,21 +121,34 @@ struct WorkflowDetailView: View {
     @ObservedObject var state: AppState
     @AppStorage("pipelineActiveOnly") private var activeOnly = false
     @AppStorage("pipelineDateFilter") private var pipelineDateFilter = PipelineDateFilter.today
+    @AppStorage("workItemStatus") private var workItemStatus = ""
     @State private var search = ""
     private var sessionSection: Bool { [.claude, .codex].contains(state.section) }
     private var azureSection: Bool { [.myPRs, .toReview, .colleague, .allPRs, .pipelines].contains(state.section) }
-    private var workSection: Bool { [.ours, .mine, .colleagueWork, .today, .sprint, .due].contains(state.section) }
+    private var workSection: Bool { [.mine, .today].contains(state.section) }
     private var filters: [DetailSection] {
         if sessionSection { return [.claude, .codex] }
         if azureSection { return [.myPRs, .toReview, .colleague, .allPRs, .pipelines] }
-        if workSection { return [.ours, .mine, .colleagueWork, .today, .sprint, .due] }
+        if workSection { return [.mine, .today] }
         return []
+    }
+    private var workItemsInRange: [WorkItem] {
+        state.snapshot.workItems.filter { $0.buckets.contains(state.section.bucket) }
+    }
+    private var filteredWorkItems: [WorkItem] {
+        workItemsInRange.filter {
+            WorkItemFilter.matches(id: $0.id, title: $0.title, state: $0.state,
+                                   status: workItemStatus, search: state.workItemSearch)
+        }
+    }
+    private var workItemStatuses: [String] {
+        Set(state.snapshot.workItems.map(\.state) + [workItemStatus]).filter { !$0.isEmpty }.sorted()
     }
     var body: some View {
         CardBackground(wash: nil) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    backButton("\(state.section.title)") { state.view = .overview }
+                    backButton(workSection ? "My work items" : state.section.title) { state.view = .overview }
                     Spacer()
                     if state.section == .pipelines {
                         HStack(spacing: 2) {
@@ -150,6 +162,16 @@ struct WorkflowDetailView: View {
                         }.background(Color(hex: "#0E0F11"), in: Capsule())
                             .help("Filter by queue date in your Mac’s time zone. All shows loaded history.")
                         Toggle("Active only", isOn: $activeOnly).toggleStyle(.checkbox).font(.system(size: 10))
+                    } else if workSection {
+                        HStack(spacing: 5) {
+                            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                            TextField("Search title or #ID…", text: $state.workItemSearch).textFieldStyle(.plain)
+                                .accessibilityLabel("Search my work items")
+                            if !state.workItemSearch.isEmpty {
+                                Button { state.workItemSearch = "" } label: { Image(systemName: "xmark.circle.fill") }
+                                    .buttonStyle(.plain).accessibilityLabel("Clear work-item search")
+                            }
+                        }.font(.system(size: 11)).frame(width: 210)
                     } else if sessionSection {
                         TextField("Find a session…", text: $search).textFieldStyle(.plain)
                             .font(.system(size: 11)).frame(width: 180)
@@ -162,10 +184,33 @@ struct WorkflowDetailView: View {
                     HStack(spacing: 5) {
                         ForEach(filters, id: \.rawValue) { section in
                             Button { state.section = section; search = "" } label: {
-                                Text(section.title).font(.system(size: 10, weight: .medium))
+                                Text(workSection && section == .mine ? "All" : section.title).font(.system(size: 10, weight: .medium))
                                     .padding(.horizontal, 9).padding(.vertical, 4)
                                     .background(state.section == section ? Color(hex: "#2B2E34") : Color(hex: "#0E0F11"), in: Capsule())
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(.plain).accessibilityAddTraits(state.section == section ? .isSelected : [])
+                        }
+                        if workSection {
+                            Spacer()
+                            Menu {
+                                Button("All open statuses") { workItemStatus = "" }
+                                Divider()
+                                ForEach(workItemStatuses, id: \.self) { status in
+                                    Button {
+                                        workItemStatus = status
+                                    } label: {
+                                        if workItemStatus == status { Label(status, systemImage: "checkmark") }
+                                        else { Text(status) }
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "line.3.horizontal.decrease")
+                                    Text(workItemStatus.isEmpty ? "All open statuses" : workItemStatus)
+                                }.font(.system(size: 10, weight: .medium))
+                                    .padding(.horizontal, 9).padding(.vertical, 4)
+                                    .background(Color(hex: "#2B2E34"), in: Capsule())
+                            }.menuStyle(.borderlessButton).fixedSize()
+                                .accessibilityLabel("Filter work items by status")
                         }
                     }
                 }
@@ -234,11 +279,8 @@ struct WorkflowDetailView: View {
                 }.help(pr.reviewers.map { "\($0.name): \(reviewVote($0.vote))" }.joined(separator: "\n"))
             }
         } else if workSection {
-            let items = state.snapshot.workItems.filter { $0.buckets.contains(state.section.bucket) }
-            if state.section == .colleagueWork && state.snapshot.settings.colleagueEmail.isEmpty { empty("Set your colleague’s Azure email in Settings to use this filter.") }
-            else if state.section == .sprint && state.snapshot.settings.team.isEmpty { empty("Set your Azure team in Settings to load the current sprint.") }
-            else if state.section == .due && state.snapshot.settings.dueDateField.isEmpty { empty("Set your process’s due-date field in Settings. Azure has no universal due-date field.") }
-            else if items.isEmpty { empty("No work items in this view.") }
+            let items = filteredWorkItems
+            if items.isEmpty { empty("No personal work items match these filters.") }
             ForEach(items) { item in
                 Button { BridgeModel.shared.openWeb(item.url) } label: {
                     HStack(spacing: 7) {
@@ -269,6 +311,14 @@ struct WorkflowDetailView: View {
     }
     private var connectionFooter: some View {
         HStack {
+            if workSection {
+                Text("\(filteredWorkItems.count) of \(workItemsInRange.count)")
+                    .font(.system(size: 9)).foregroundColor(Color(hex: "#9398A1"))
+                if !workItemStatus.isEmpty || !state.workItemSearch.isEmpty {
+                    Button("Clear filters") { workItemStatus = ""; state.workItemSearch = "" }
+                        .buttonStyle(.plain).font(.system(size: 9)).foregroundColor(Color(hex: "#A78BFA"))
+                }
+            }
             Text(state.snapshot.errors.first ?? "\(state.snapshot.connection.capitalized) · \(state.snapshot.lastSync.map(displayDate) ?? "Not synced")\(workSection ? " · up to 200 per query" : state.section == .pipelines ? " · loaded runs" : "")")
                 .font(.system(size: 9)).foregroundColor(Color(hex: state.snapshot.errors.isEmpty ? "#6B7079" : "#F5A524"))
                 .lineLimit(2).textSelection(.enabled)

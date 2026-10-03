@@ -132,7 +132,7 @@ export class ADO {
     })).sort((a,b) => b.date.localeCompare(a.date));
   }
   async query(wiql) {
-    return this.call('wit_query', { action: 'wiql', project: this.settings.workItemProject || this.settings.project, ...(this.settings.team ? {team:this.settings.team} : {}), wiql, top: 200, timePrecision: true });
+    return this.call('wit_query', { action: 'wiql', project: this.settings.workItemProject || this.settings.project, wiql, top: 200, timePrecision: true });
   }
   async workItems() {
     const s = this.settings;
@@ -141,20 +141,13 @@ export class ADO {
     const base = 'SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND '
       + (types.length ? '[System.WorkItemType] IN (' + types.map(t => "'" + escapeWIQL(t) + "'").join(', ') + ') AND ' : '');
     const assignee = s.myEmail ? "'" + escapeWIQL(s.myEmail) + "'" : '@me';
-    const colleague = s.colleagueEmail ? "'" + escapeWIQL(s.colleagueEmail) + "'" : null;
-    const people = '([System.AssignedTo] = ' + assignee + (colleague ? ' OR [System.AssignedTo] = ' + colleague : '') + ') AND ';
-    const open = " AND [System.State] NOT IN ('Closed', 'Done', 'Removed') ORDER BY [System.ChangedDate] DESC";
+    const personal = base + '[System.AssignedTo] = ' + assignee
+      + " AND [System.State] NOT IN ('Closed', 'Done', 'Removed')";
     const [start,end] = dayBounds();
     const queries = {
-      mine: base + '[System.AssignedTo] = ' + assignee + open,
-      today: base + people + "[System.CreatedDate] >= '" + start + "' AND [System.CreatedDate] < '" + end + "' ORDER BY [System.CreatedDate] DESC",
+      mine: personal + ' ORDER BY [System.ChangedDate] DESC',
+      today: personal + " AND [System.CreatedDate] >= '" + start + "' AND [System.CreatedDate] < '" + end + "' ORDER BY [System.CreatedDate] DESC",
     };
-    if (colleague) queries.colleague = base + '[System.AssignedTo] = ' + colleague + open;
-    if (s.team) queries.sprint = base + people + '[System.IterationPath] = @CurrentIteration ORDER BY [System.ChangedDate] DESC';
-    if (s.dueDateField) {
-      if (!/^[A-Za-z][A-Za-z0-9_.]+$/.test(s.dueDateField)) throw new Error('Enter a valid ADO due-date field reference name.');
-      queries.due = base + people + '[' + s.dueDateField + "] >= '" + start + "' AND [" + s.dueDateField + "] < '" + end + "'";
-    }
     const groups = await Promise.all(Object.entries(queries).map(async ([key,wiql]) => [key,(await this.query(wiql)).workItems || []]));
     const ids = [...new Set(groups.flatMap(([,rows]) => rows.map(r => r.id)))];
     const items = [];
@@ -163,7 +156,6 @@ export class ADO {
         fields: ['System.Id','System.Title','System.State','System.WorkItemType','System.AssignedTo','System.CreatedDate','System.ChangedDate','System.IterationPath'] });
       items.push(...page);
     }
-    groups.push(['ours', groups.filter(([key]) => ['mine','colleague'].includes(key)).flatMap(([,rows]) => rows)]);
     items.sort((a,b) => (b.fields?.['System.ChangedDate'] || '').localeCompare(a.fields?.['System.ChangedDate'] || ''));
     return items.map(w => ({ id: String(w.id), title: w.fields?.['System.Title'] || '', state: w.fields?.['System.State'] || '',
       type: w.fields?.['System.WorkItemType'] || '', assignedTo: typeof w.fields?.['System.AssignedTo'] === 'string'

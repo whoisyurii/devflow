@@ -53,11 +53,12 @@ test('changing the Boards scope clears old Azure data and notification baselines
   const directory=await mkdtemp('/tmp/df-'); let bridge;
   try {
     await writeFile(join(directory,'settings.json'),JSON.stringify({project:'Code',importHistory:false}));
-    await writeFile(join(directory,'state.json'),JSON.stringify({workItems:[{id:'old'}],baselines:{workItems:true},lastSync:'old'}));
+    await writeFile(join(directory,'state.json'),JSON.stringify({workItemScopeVersion:2,workItems:[{id:'old'}],baselines:{workItems:true},lastSync:'old'}));
     bridge=await launch(directory);
     let state=await bridge.call('snapshot');
     assert.equal(state.settings.workItemProject,'');
     assert.equal(state.settings.workItemTypes,'');
+    assert.deepEqual(state.workItems,[{id:'old'}]);
     await bridge.call('configure',{workItemProject:'Boards',workItemTypes:'Bug'});
     state=await bridge.call('snapshot');
     assert.equal(state.settings.project,'Code');

@@ -8,6 +8,7 @@ final class AppState: ObservableObject {
     @Published var view: IslandView = .overview
     @Published var focusId = "codex"
     @Published var section: DetailSection = .codex
+    @Published var workItemSearch = ""
     @Published var sessionID: String?
     @Published var isPinned = false
     @Published var snapshot = Snapshot()

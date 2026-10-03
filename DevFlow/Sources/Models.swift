@@ -8,10 +8,8 @@ struct Settings: Codable, Equatable, Sendable {
     var colleagueEmail = ""
     var workItemProject = ""
     var workItemTypes = ""
-    var team = ""
     var authentication = "interactive"
     var tokenEnvironmentVariable = "ADO_MCP_AUTH_TOKEN"
-    var dueDateField = ""
     var notifications = true
     var showNotch = true
     var importHistory = true

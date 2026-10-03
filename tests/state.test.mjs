@@ -131,3 +131,17 @@ test('Codex desktop response items supply the user-facing session title', () => 
   const prompts=historyEvents(rows.map(JSON.stringify),'codex','/fixture').filter(e=>e.hook_event_name==='UserPromptSubmit');
   assert.equal(prompts.length,1);assert.equal(prompts[0].prompt,'Keep the original notch UI');
 });
+
+test('upgrade clears shared work-item cache while preserving personal sessions and PR data', async t => {
+  const store=await fixture(t);
+  await writeFile(join(store.directory,'state.json'),JSON.stringify({workItems:[{id:'shared',buckets:['colleague','ours']}],pullRequests:[{id:'pr'}],baselines:{workItems:true,pullRequests:true}}));
+  await writeFile(join(store.directory,'settings.json'),JSON.stringify({project:'Code',team:'Old team',dueDateField:'Custom.Old'}));
+  const reopened=new Store(store.directory);await reopened.load();
+  assert.deepEqual(reopened.state.workItems,[]);
+  assert.deepEqual(reopened.state.pullRequests,[{id:'pr'}]);
+  assert.deepEqual(reopened.state.baselines,{pullRequests:true});
+  assert.equal(reopened.state.workItemScopeVersion,2);
+  assert.equal(reopened.settings.project,'Code');
+  assert.equal(reopened.settings.team,undefined);
+  assert.equal(reopened.settings.dueDateField,undefined);
+});

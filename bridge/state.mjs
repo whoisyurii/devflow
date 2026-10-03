@@ -3,14 +3,14 @@ import { mkdir, readFile, writeFile, rename, chmod } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 export const defaults = {
-  organization: '', project: '', repository: '', myEmail: '', colleagueEmail: '', team: '',
+  organization: '', project: '', repository: '', myEmail: '', colleagueEmail: '',
   workItemProject: '', workItemTypes: '',
   authentication: 'interactive', tokenEnvironmentVariable: 'ADO_MCP_AUTH_TOKEN',
-  dueDateField: '', notifications: true, showNotch: true, importHistory: true,
+  notifications: true, showNotch: true, importHistory: true,
 };
 export const blankState = () => ({
   sessions: [], activity: [], pullRequests: [], pipelines: [], workItems: [],
-  connection: 'disconnected', lastSync: null, baselines: {}, errors: [], hookStatus: '',
+  workItemScopeVersion: 2, connection: 'disconnected', lastSync: null, baselines: {}, errors: [], hookStatus: '',
 });
 export const stableID = (...parts) => createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 32);
 export const now = () => new Date().toISOString();
@@ -33,7 +33,16 @@ export class Store {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     await chmod(this.directory, 0o700);
     for (const [name, target] of [['settings', 'settings'], ['state', 'state']]) {
-      try { this[target] = { ...this[target], ...JSON.parse(await readFile(join(this.directory, name + '.json'), 'utf8')) }; }
+      try {
+        const saved = JSON.parse(await readFile(join(this.directory, name + '.json'), 'utf8'));
+        this[target] = { ...this[target], ...saved };
+        if (name === 'state' && saved.workItemScopeVersion !== 2) {
+          // Old caches included a colleague and sprint/due feeds. Never display them as personal items.
+          this.state.workItems = [];
+          delete this.state.baselines.workItems;
+          this.state.workItemScopeVersion = 2;
+        }
+      }
       catch (e) {
         if (e.code !== 'ENOENT') {
           const backup = name + '.unreadable.' + Date.now() + '.json';
@@ -42,6 +51,7 @@ export class Store {
         }
       }
     }
+    this.settings = Object.fromEntries(Object.entries(this.settings).filter(([key]) => key in defaults));
     this.state.connection = 'disconnected';
     this.state.sessions = this.state.sessions.map(s => ({ ...s, state: ['working', 'thinking', 'waiting'].includes(s.state) ? 'unknown' : s.state }));
   }
