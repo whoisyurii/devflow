@@ -33,7 +33,8 @@ export function historyEvents(lines, agent, path) {
       if (r.type === 'event_msg' && p.type === 'user_message') emit('UserPromptSubmit', r.timestamp, { prompt: p.message || '' });
       if (r.type === 'response_item' && p.type === 'message' && p.role === 'user') {
         const prompt = (p.content || []).filter(x => x.type === 'input_text').map(x => x.text).join('\n').trim();
-        if (prompt && !prompt.startsWith('# AGENTS.md') && !prompt.startsWith('<environment_context>') && !prompt.startsWith('<permissions instructions>'))
+        const ambient = /^<(?:skill|in-app-browser-context|realtime_delegation|environment_context|permissions|app-context|turn_aborted|send_user_message_question_reply)\b/.test(prompt);
+        if (prompt && !prompt.startsWith('# AGENTS.md') && !ambient)
           emit('UserPromptSubmit', r.timestamp, { prompt });
       }
       if (r.type === 'event_msg' && p.type === 'task_complete') { turn = p.turn_id || turn; emit('Stop', r.timestamp, { last_assistant_message: p.last_agent_message || p.last_assistant_message || '' }); }

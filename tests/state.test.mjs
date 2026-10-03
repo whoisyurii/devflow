@@ -125,7 +125,9 @@ test('Codex internal reviewer sessions are excluded from user chat history', () 
 test('Codex desktop response items supply the user-facing session title', () => {
   const rows=[{type:'session_meta',payload:{id:'chat',source:'vscode'}},
     {type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'# AGENTS.md instructions'}]}},
-    {type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'Keep the original notch UI'}]}}];
+    {type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'Keep the original notch UI'}]}},
+    {type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'<skill>automatic skill context</skill>'}]}},
+    {type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'<in-app-browser-context source="ambient-ui-state">not a user request</in-app-browser-context>'}]}}];
   const prompts=historyEvents(rows.map(JSON.stringify),'codex','/fixture').filter(e=>e.hook_event_name==='UserPromptSubmit');
   assert.equal(prompts.length,1);assert.equal(prompts[0].prompt,'Keep the original notch UI');
 });
