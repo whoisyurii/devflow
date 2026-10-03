@@ -6,6 +6,8 @@ struct Settings: Codable, Equatable, Sendable {
     var repository = ""
     var myEmail = ""
     var colleagueEmail = ""
+    var workItemProject = ""
+    var workItemTypes = ""
     var team = ""
     var authentication = "interactive"
     var tokenEnvironmentVariable = "ADO_MCP_AUTH_TOKEN"

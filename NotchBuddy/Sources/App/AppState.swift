@@ -50,10 +50,10 @@ final class AppState: ObservableObject {
         lastActivity = .now
     }
     func show(_ section: DetailSection) {
-        self.section = section; view = .detail; isPinned = true; latestNotice = nil
+        self.section = section; view = .detail; latestNotice = nil
     }
     func showSession(_ id: String) {
-        sessionID = id; view = .answer; isPinned = true; latestNotice = nil
+        sessionID = id; view = .answer; latestNotice = nil
     }
     func showActivity(_ entry: Activity) {
         BridgeModel.shared.perform("markRead", params: ["id": entry.id])

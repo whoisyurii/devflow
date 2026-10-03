@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,4 +47,23 @@ test('real bridge handles Unix socket events, persists answers, and restores unr
     bridge=await launch(directory);state=await bridge.call('snapshot');
     assert.equal(state.sessions[0].answers[0].text,'Complete\nanswer');assert.equal(state.activity[0].read,true);
   }finally{if(bridge)await bridge.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('changing the Boards scope clears old Azure data and notification baselines', {timeout:15000}, async () => {
+  const directory=await mkdtemp('/tmp/df-'); let bridge;
+  try {
+    await writeFile(join(directory,'settings.json'),JSON.stringify({project:'Code',importHistory:false}));
+    await writeFile(join(directory,'state.json'),JSON.stringify({workItems:[{id:'old'}],baselines:{workItems:true},lastSync:'old'}));
+    bridge=await launch(directory);
+    let state=await bridge.call('snapshot');
+    assert.equal(state.settings.workItemProject,'');
+    assert.equal(state.settings.workItemTypes,'');
+    await bridge.call('configure',{workItemProject:'Boards',workItemTypes:'Bug'});
+    state=await bridge.call('snapshot');
+    assert.equal(state.settings.project,'Code');
+    assert.equal(state.settings.workItemProject,'Boards');
+    assert.deepEqual(state.workItems,[]);
+    assert.deepEqual(state.baselines,{});
+    assert.equal(state.lastSync,null);
+  } finally { if(bridge) await bridge.close(); await rm(directory,{recursive:true,force:true}); }
 });

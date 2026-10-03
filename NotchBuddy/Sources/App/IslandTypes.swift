@@ -28,7 +28,7 @@ enum IslandConst {
 }
 
 enum DetailSection: String, CaseIterable {
-    case claude, codex, myPRs, toReview, colleague, allPRs, pipelines, mine, today, sprint, due, inbox
+    case claude, codex, myPRs, toReview, colleague, allPRs, pipelines, ours, mine, colleagueWork, today, sprint, due, inbox
     var title: String {
         switch self {
         case .claude: "Claude Code"
@@ -38,7 +38,9 @@ enum DetailSection: String, CaseIterable {
         case .colleague: "Colleague"
         case .allPRs: "All PRs"
         case .pipelines: "Pipelines"
-        case .mine: "Assigned to me"
+        case .ours: "Both"
+        case .mine: "Mine"
+        case .colleagueWork: "Colleague"
         case .today: "Created today"
         case .sprint: "Current sprint"
         case .due: "Due today"
@@ -49,7 +51,8 @@ enum DetailSection: String, CaseIterable {
         switch self {
         case .myPRs, .mine: "mine"
         case .toReview: "review"
-        case .colleague: "colleague"
+        case .colleague, .colleagueWork: "colleague"
+        case .ours: "ours"
         case .today: "today"
         case .sprint: "sprint"
         case .due: "due"

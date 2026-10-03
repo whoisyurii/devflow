@@ -19,8 +19,12 @@ struct IslandContainer: View {
     @State private var islandWidth = IslandConst.notchWidth
     @State private var islandHeight = IslandConst.notchHeight
     @State private var cornerRadius = IslandConst.roundedCorner
-    private let openSpring = Animation.spring(response: 0.5, dampingFraction: 0.72)
-    private let closeEase = Animation.timingCurve(0.45, 0, 0.2, 1, duration: 0.34)
+    private let openSpring = Animation.spring(response: 0.28, dampingFraction: 0.9)
+    private let closeEase = Animation.easeOut(duration: 0.16)
+    private var targetSize: CGSize {
+        let (width, height) = islandSize(mode: state.mode, view: state.view, nw: state.notchWidth, nh: state.notchHeight)
+        return CGSize(width: width, height: height)
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -28,7 +32,8 @@ struct IslandContainer: View {
                         cornerRadius: cornerRadius, topRadius: 0).fill(Color.black)
             if state.mode == .expanded {
                 IslandContentView(state: state)
-                    .frame(width: islandWidth, height: islandHeight)
+                    // Keep list/text layout stable while the outer island morphs.
+                    .frame(width: IslandConst.expandedWidth, height: state.view == .overview ? 160 : 360)
                     .clipShape(IslandShape(width: islandWidth, height: islandHeight,
                                           cornerRadius: cornerRadius, topRadius: 0))
                     .transition(.opacity)
@@ -44,12 +49,9 @@ struct IslandContainer: View {
         }
         .frame(width: islandWidth, height: islandHeight, alignment: .topLeading)
         .onAppear { resize() }
-        .onChange(of: state.mode) { old, new in
-            withAnimation(new == .expanded ? openSpring : closeEase) { resize() }
+        .onChange(of: targetSize) { _, _ in
+            withAnimation(state.mode == .expanded ? openSpring : closeEase) { resize() }
         }
-        .onChange(of: state.view) { _, _ in withAnimation(openSpring) { resize() } }
-        .onChange(of: state.notchWidth) { _, _ in resize() }
-        .onChange(of: state.notchHeight) { _, _ in resize() }
     }
     private func resize() {
         (islandWidth, islandHeight) = islandSize(mode: state.mode, view: state.view,
@@ -75,7 +77,7 @@ struct IslandContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 10)
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: state.view)
+            .animation(.spring(response: 0.25, dampingFraction: 0.9), value: state.view)
         }
         .padding(.top, 8).padding(.bottom, 10)
         .foregroundColor(Color(hex: "#F5F6F8"))

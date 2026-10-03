@@ -21,7 +21,9 @@ final class IslandStateMachine {
     var isHeldOpen: (() -> Bool)?
 
     /// home → petit delay (seconds). Override for debug.
-    var homeToPetitDelay: TimeInterval = 15
+    var homeToPetitDelay: TimeInterval = 0.2
+    /// Brief intent delay avoids expanding when the pointer only crosses the notch.
+    var hoverOpenDelay: TimeInterval = 0.1
     /// petit → hidden delay (seconds). Override for debug.
     var petitToHiddenDelay: TimeInterval = 60
     /// coucou → petit delay after greeting animation ends (no hover). ~0.6s syncs with canvas collapse.
@@ -32,6 +34,7 @@ final class IslandStateMachine {
     private var petitHideWork: DispatchWorkItem?
     private var homeCollapseWork: DispatchWorkItem?
     private var greetCollapseWork: DispatchWorkItem?
+    private var hoverOpenWork: DispatchWorkItem?
 
     // MARK: – Inputs
 
@@ -51,10 +54,12 @@ final class IslandStateMachine {
             } else {
                 cancelTimers()
                 transition(to: .petit)
+                scheduleHoverOpen()
             }
         case .petit:
             petitHideWork?.cancel()
             petitHideWork = nil
+            scheduleHoverOpen()
         case .home:
             homeCollapseWork?.cancel()
             homeCollapseWork = nil
@@ -65,14 +70,15 @@ final class IslandStateMachine {
     }
 
     /// Mouse left the island notch area
-    func mouseLeft() {
+    func mouseLeft(after delay: TimeInterval? = nil) {
+        hoverOpenWork?.cancel(); hoverOpenWork = nil
         switch state {
         case .hidden:
             break
         case .petit:
             schedulePetitHide()
         case .home:
-            if isHeldOpen?() != true { scheduleHomeCollapse() }
+            if isHeldOpen?() != true { scheduleHomeCollapse(delay: delay ?? homeToPetitDelay) }
         case .coucou:
             if isHeldOpen?() != true {
                 // Interrupt greeting immediately → compact (overrides 10s auto-collapse)
@@ -110,10 +116,8 @@ final class IslandStateMachine {
     }
 
     /// The app folded the island itself (Escape, Settings, OK button, auto-close).
-    /// Move to `.petit` right away so hover and click keep working; waiting for the
-    /// 15 s home timer left the island compact on screen while the FSM still said `.home`.
+    /// Wait for a new pointer entry before hover can reopen it.
     func collapse() {
-        guard state == .home || state == .coucou else { return }
         cancelTimers()
         transition(to: .petit)
     }
@@ -148,6 +152,16 @@ final class IslandStateMachine {
 
     // MARK: – Timers
 
+    private func scheduleHoverOpen() {
+        hoverOpenWork?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self, self.state == .petit else { return }
+            self.transition(to: .home)
+        }
+        hoverOpenWork = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + hoverOpenDelay, execute: item)
+    }
+
     private func schedulePetitHide() {
         petitHideWork?.cancel()
         let item = DispatchWorkItem { [weak self] in
@@ -158,17 +172,18 @@ final class IslandStateMachine {
         DispatchQueue.main.asyncAfter(deadline: .now() + petitToHiddenDelay, execute: item)
     }
 
-    private func scheduleHomeCollapse() {
+    private func scheduleHomeCollapse(delay: TimeInterval) {
         homeCollapseWork?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self, self.state == .home, !(self.isHeldOpen?() ?? false) else { return }
             self.transition(to: .petit)
         }
         homeCollapseWork = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + homeToPetitDelay, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     func cancelTimers() {
+        hoverOpenWork?.cancel(); hoverOpenWork = nil
         petitHideWork?.cancel();    petitHideWork = nil
         homeCollapseWork?.cancel(); homeCollapseWork = nil
         greetCollapseWork?.cancel(); greetCollapseWork = nil

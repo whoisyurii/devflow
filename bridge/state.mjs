@@ -4,6 +4,7 @@ import { basename, join } from 'node:path';
 
 export const defaults = {
   organization: '', project: '', repository: '', myEmail: '', colleagueEmail: '', team: '',
+  workItemProject: '', workItemTypes: '',
   authentication: 'interactive', tokenEnvironmentVariable: 'ADO_MCP_AUTH_TOKEN',
   dueDateField: '', notifications: true, showNotch: true, importHistory: true,
 };

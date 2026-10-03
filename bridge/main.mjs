@@ -88,10 +88,10 @@ async function command(message) {
     case 'snapshot': return store.snapshot();
     case 'configure': {
       const previous=store.settings;
-      const adoChanged=['organization','project','repository','myEmail','colleagueEmail','team','authentication','dueDateField','tokenEnvironmentVariable'].some(k=>p[k]!==undefined&&previous[k]!==p[k]);
+      const adoChanged=['organization','project','repository','myEmail','colleagueEmail','workItemProject','workItemTypes','team','authentication','dueDateField','tokenEnvironmentVariable'].some(k=>p[k]!==undefined&&previous[k]!==p[k]);
       if(adoChanged) {connected=false;generation++;clearTimeout(timer);await ado.close();}
       await store.saveSettings(p);
-      if(['organization','project','repository','myEmail','colleagueEmail','team','dueDateField'].some(k=>previous[k]!==store.settings[k])) {
+      if(['organization','project','repository','myEmail','colleagueEmail','workItemProject','workItemTypes','team','dueDateField'].some(k=>previous[k]!==store.settings[k])) {
         store.state.pullRequests=[];store.state.pipelines=[];store.state.workItems=[];store.state.lastSync=null;store.state.baselines={};
       }
       if(adoChanged) store.state.connection='disconnected';

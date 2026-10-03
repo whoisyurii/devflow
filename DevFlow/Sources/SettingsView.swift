@@ -20,7 +20,7 @@ struct DevFlowSettingsView: View {
                         TextField("Repository", text: $draft.repository)
                         TextField("My email (optional)", text: $draft.myEmail)
                         TextField("Colleague’s email", text: $draft.colleagueEmail)
-                        Text("Leave your email empty to use the authenticated Azure identity. Your colleague’s email enables the Colleague PR view.").font(.caption).foregroundStyle(.secondary)
+                        Text("Leave your email empty to use the authenticated Azure identity. Your colleague’s email enables their PRs and work items.").font(.caption).foregroundStyle(.secondary)
                     }
                     Section("Sign-in") {
                         Picker("Authentication", selection: $draft.authentication) {
@@ -45,7 +45,10 @@ struct DevFlowSettingsView: View {
                         }
                     }
                     Section("Work items") {
+                        TextField("Project (optional)", text: $draft.workItemProject, prompt: Text("Same as repository project"))
                         TextField("Team for current sprint", text: $draft.team)
+                        TextField("Types (optional)", text: $draft.workItemTypes, prompt: Text("Activity, User Story, Bug"))
+                        Text("Use a separate project for Boards if needed. Comma-separated types limit the list to your board; leave empty for all types. Today, sprint and due views include items assigned to either of you.").font(.caption).foregroundStyle(.secondary)
                         TextField("Due-date field (optional)", text: $draft.dueDateField, prompt: Text("Microsoft.VSTS.Scheduling.DueDate"))
                     }
                     HStack {

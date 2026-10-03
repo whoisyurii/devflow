@@ -10,6 +10,7 @@ final class IslandWindowController: NSWindowController {
     private var frameTimer: Timer?
     private var keyMonitor: Any?
     private var wasInIsland = false
+    private var wasPinned = false
 
     convenience init() {
         let screen = Self.notchScreen() ?? NSScreen.main!
@@ -31,16 +32,18 @@ final class IslandWindowController: NSWindowController {
             guard let self else { return }
             // Stay available in the notch even when idle, as requested.
             self.state.mode = to == .home || to == .coucou ? .expanded : .compact
+            if self.state.mode == .expanded { self.window?.makeKey() }
+            else { self.window?.resignKey() }
         }
         fsm.reveal()
         frameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.pollFrame() }
         }
         RunLoop.main.add(frameTimer!, forMode: .common)
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseUp]) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] event in
             guard let self else { return event }
             if event.type == .keyDown && event.keyCode == 53 { self.collapse(); return nil }
-            if event.type == .leftMouseUp && event.window == self.window && self.state.mode != .expanded {
+            if event.type == .leftMouseDown && event.window == self.window && self.state.mode != .expanded {
                 self.expand(); return nil
             }
             return event
@@ -73,22 +76,24 @@ final class IslandWindowController: NSWindowController {
         let inside = hoverRect.contains(local)
         if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
         if inside && !wasInIsland { fsm.mouseEntered() }
-        if !inside && wasInIsland { fsm.mouseLeft() }
+        if !inside && (wasInIsland || wasPinned && !state.isPinned) { fsm.mouseLeft() }
         wasInIsland = inside
+        wasPinned = state.isPinned
     }
     @objc func expand() {
         state.mode = .expanded; fsm.openedExternally(); state.lastActivity = .now
         window?.orderFrontRegardless(); window?.makeKey()
-        if !wasInIsland { fsm.mouseLeft() }
+        // Notices/menu opens get reading time; ordinary pointer exits close promptly.
+        if !wasInIsland { fsm.mouseLeft(after: 4) }
     }
     @objc func collapse() {
-        state.isPinned = false; state.view = .overview; state.latestNotice = nil
+        state.isPinned = false; state.latestNotice = nil
         fsm.collapse(); state.mode = .compact; window?.resignKey()
     }
     @objc private func announce(_ note: Notification) {
         guard let entry = note.object as? Activity else { return }
         // Do not interrupt someone reading a session or detail list.
-        guard !state.isPinned else { return }
+        guard !state.isPinned, !(state.mode == .expanded && wasInIsland) else { return }
         state.latestNotice = entry; state.view = .overview; expand()
     }
     static func notchScreen() -> NSScreen? { NSScreen.screens.first { $0.safeAreaInsets.top > 0 } }

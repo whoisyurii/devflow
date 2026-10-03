@@ -48,7 +48,7 @@ struct IntegrationCardView: View {
                 .padding(.top, 6).padding(.leading, 108).padding(.trailing, 12)
                 VStack(alignment: .leading, spacing: 4) {
                     if task.id == "work" {
-                        stat("person", "Assigned to me", count: count("mine"), section: .mine)
+                        stat("person.2", state.snapshot.settings.colleagueEmail.isEmpty ? "Assigned to me" : "Assigned to us", count: count("ours"), section: .ours)
                         stat("sun.max", "New today", count: count("today"), section: .today)
                         stat("calendar", "This sprint", count: count("sprint"), section: .sprint)
                     } else if task.id == "inbox" {
@@ -86,7 +86,7 @@ struct IntegrationCardView: View {
         switch task.id {
         case "claude": state.show(.claude)
         case "codex": state.show(.codex)
-        case "work": state.show(.mine)
+        case "work": state.show(.ours)
         default: state.show(.inbox)
         }
     }
@@ -120,15 +120,16 @@ struct AzurePulseCardView: View {
 // only when reading a list. PR rows themselves are the original GitHub row component.
 struct WorkflowDetailView: View {
     @ObservedObject var state: AppState
-    @State private var activeOnly = true
+    @AppStorage("pipelineActiveOnly") private var activeOnly = false
+    @AppStorage("pipelineDateFilter") private var pipelineDateFilter = PipelineDateFilter.today
     @State private var search = ""
     private var sessionSection: Bool { [.claude, .codex].contains(state.section) }
     private var azureSection: Bool { [.myPRs, .toReview, .colleague, .allPRs, .pipelines].contains(state.section) }
-    private var workSection: Bool { [.mine, .today, .sprint, .due].contains(state.section) }
+    private var workSection: Bool { [.ours, .mine, .colleagueWork, .today, .sprint, .due].contains(state.section) }
     private var filters: [DetailSection] {
         if sessionSection { return [.claude, .codex] }
         if azureSection { return [.myPRs, .toReview, .colleague, .allPRs, .pipelines] }
-        if workSection { return [.mine, .today, .sprint, .due] }
+        if workSection { return [.ours, .mine, .colleagueWork, .today, .sprint, .due] }
         return []
     }
     var body: some View {
@@ -138,6 +139,16 @@ struct WorkflowDetailView: View {
                     backButton("\(state.section.title)") { state.view = .overview }
                     Spacer()
                     if state.section == .pipelines {
+                        HStack(spacing: 2) {
+                            ForEach(PipelineDateFilter.allCases, id: \.rawValue) { filter in
+                                Button { pipelineDateFilter = filter } label: {
+                                    Text(filter.rawValue).font(.system(size: 10, weight: .medium))
+                                        .padding(.horizontal, 9).padding(.vertical, 4)
+                                        .background(pipelineDateFilter == filter ? Color(hex: "#2B2E34") : Color.clear, in: Capsule())
+                                }.buttonStyle(.plain).accessibilityAddTraits(pipelineDateFilter == filter ? .isSelected : [])
+                            }
+                        }.background(Color(hex: "#0E0F11"), in: Capsule())
+                            .help("Filter by queue date in your Mac’s time zone. All shows loaded history.")
                         Toggle("Active only", isOn: $activeOnly).toggleStyle(.checkbox).font(.system(size: 10))
                     } else if sessionSection {
                         TextField("Find a session…", text: $search).textFieldStyle(.plain)
@@ -193,8 +204,12 @@ struct WorkflowDetailView: View {
                 }.buttonStyle(.plain)
             }
         } else if state.section == .pipelines {
-            let builds = state.snapshot.pipelines.filter { !activeOnly || ["running", "queued"].contains($0.status) }
-            if builds.isEmpty { empty(activeOnly ? "No running or queued pipelines." : "No recent pipelines.") }
+            let builds = state.snapshot.pipelines.filter {
+                pipelineDateFilter.includes($0.date) && (!activeOnly || ["running", "queued"].contains($0.status))
+            }
+            if builds.isEmpty { empty(pipelineDateFilter == .today
+                ? (activeOnly ? "No running or queued pipelines from today." : "No pipelines queued today.")
+                : (activeOnly ? "No running or queued pipelines." : "No recent pipelines.")) }
             ForEach(builds) { build in
                 Button { BridgeModel.shared.openWeb(build.url) } label: {
                     HStack(spacing: 5) {
@@ -220,7 +235,8 @@ struct WorkflowDetailView: View {
             }
         } else if workSection {
             let items = state.snapshot.workItems.filter { $0.buckets.contains(state.section.bucket) }
-            if state.section == .sprint && state.snapshot.settings.team.isEmpty { empty("Set your Azure team in Settings to load the current sprint.") }
+            if state.section == .colleagueWork && state.snapshot.settings.colleagueEmail.isEmpty { empty("Set your colleague’s Azure email in Settings to use this filter.") }
+            else if state.section == .sprint && state.snapshot.settings.team.isEmpty { empty("Set your Azure team in Settings to load the current sprint.") }
             else if state.section == .due && state.snapshot.settings.dueDateField.isEmpty { empty("Set your process’s due-date field in Settings. Azure has no universal due-date field.") }
             else if items.isEmpty { empty("No work items in this view.") }
             ForEach(items) { item in
@@ -253,7 +269,7 @@ struct WorkflowDetailView: View {
     }
     private var connectionFooter: some View {
         HStack {
-            Text(state.snapshot.errors.first ?? "\(state.snapshot.connection.capitalized) · \(state.snapshot.lastSync.map(displayDate) ?? "Not synced")\(workSection ? " · up to 200 items per view" : "")")
+            Text(state.snapshot.errors.first ?? "\(state.snapshot.connection.capitalized) · \(state.snapshot.lastSync.map(displayDate) ?? "Not synced")\(workSection ? " · up to 200 per query" : state.section == .pipelines ? " · loaded runs" : "")")
                 .font(.system(size: 9)).foregroundColor(Color(hex: state.snapshot.errors.isEmpty ? "#6B7079" : "#F5A524"))
                 .lineLimit(2).textSelection(.enabled)
             Spacer()

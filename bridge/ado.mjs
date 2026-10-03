@@ -93,7 +93,7 @@ export class ADO {
     }
     throw new Error('More than 2,000 active PRs; narrow the selected repository.');
   }
-  baseURL() { return 'https://dev.azure.com/' + this.settings.organization + '/' + encodeURIComponent(this.settings.project); }
+  baseURL(project = this.settings.project) { return 'https://dev.azure.com/' + this.settings.organization + '/' + encodeURIComponent(project); }
   async pullRequests() {
     const s = this.settings;
     const [all, mine, reviews] = await Promise.all([
@@ -129,38 +129,48 @@ export class ADO {
       branch: branch(b.sourceBranch), commit: b.sourceVersion || '', requestedBy: b.requestedFor?.displayName || '',
       date: b.queueTime || '', startedAt: b.startTime || '', finishedAt: b.finishTime || '',
       url: this.baseURL() + '/_build/results?buildId=' + b.id,
-    }));
+    })).sort((a,b) => b.date.localeCompare(a.date));
   }
   async query(wiql) {
-    return this.call('wit_query', { action: 'wiql', project: this.settings.project, ...(this.settings.team ? {team:this.settings.team} : {}), wiql, top: 200, timePrecision: true });
+    return this.call('wit_query', { action: 'wiql', project: this.settings.workItemProject || this.settings.project, ...(this.settings.team ? {team:this.settings.team} : {}), wiql, top: 200, timePrecision: true });
   }
   async workItems() {
     const s = this.settings;
-    const base = 'SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND ';
+    const project = s.workItemProject || s.project;
+    const types = (s.workItemTypes || '').split(',').map(t => t.trim()).filter(Boolean);
+    const base = 'SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND '
+      + (types.length ? '[System.WorkItemType] IN (' + types.map(t => "'" + escapeWIQL(t) + "'").join(', ') + ') AND ' : '');
     const assignee = s.myEmail ? "'" + escapeWIQL(s.myEmail) + "'" : '@me';
+    const colleague = s.colleagueEmail ? "'" + escapeWIQL(s.colleagueEmail) + "'" : null;
+    const people = '([System.AssignedTo] = ' + assignee + (colleague ? ' OR [System.AssignedTo] = ' + colleague : '') + ') AND ';
+    const open = " AND [System.State] NOT IN ('Closed', 'Done', 'Removed') ORDER BY [System.ChangedDate] DESC";
     const [start,end] = dayBounds();
     const queries = {
-      mine: base + '[System.AssignedTo] = ' + assignee + " AND [System.State] NOT IN ('Closed', 'Done', 'Removed') ORDER BY [System.ChangedDate] DESC",
-      today: base + "[System.CreatedDate] >= '" + start + "' AND [System.CreatedDate] < '" + end + "' ORDER BY [System.CreatedDate] DESC",
+      mine: base + '[System.AssignedTo] = ' + assignee + open,
+      today: base + people + "[System.CreatedDate] >= '" + start + "' AND [System.CreatedDate] < '" + end + "' ORDER BY [System.CreatedDate] DESC",
     };
-    if (s.team) queries.sprint = base + '[System.IterationPath] = @CurrentIteration ORDER BY [System.ChangedDate] DESC';
+    if (colleague) queries.colleague = base + '[System.AssignedTo] = ' + colleague + open;
+    if (s.team) queries.sprint = base + people + '[System.IterationPath] = @CurrentIteration ORDER BY [System.ChangedDate] DESC';
     if (s.dueDateField) {
       if (!/^[A-Za-z][A-Za-z0-9_.]+$/.test(s.dueDateField)) throw new Error('Enter a valid ADO due-date field reference name.');
-      queries.due = base + '[' + s.dueDateField + "] >= '" + start + "' AND [" + s.dueDateField + "] < '" + end + "'";
+      queries.due = base + people + '[' + s.dueDateField + "] >= '" + start + "' AND [" + s.dueDateField + "] < '" + end + "'";
     }
     const groups = await Promise.all(Object.entries(queries).map(async ([key,wiql]) => [key,(await this.query(wiql)).workItems || []]));
     const ids = [...new Set(groups.flatMap(([,rows]) => rows.map(r => r.id)))];
     const items = [];
     for (let i=0; i<ids.length; i+=200) {
-      const page = await this.call('wit_work_item', { action: 'get_batch', project: s.project, ids: ids.slice(i,i+200),
-        fields: ['System.Id','System.Title','System.State','System.WorkItemType','System.AssignedTo','System.CreatedDate','System.IterationPath'] });
+      const page = await this.call('wit_work_item', { action: 'get_batch', project, ids: ids.slice(i,i+200),
+        fields: ['System.Id','System.Title','System.State','System.WorkItemType','System.AssignedTo','System.CreatedDate','System.ChangedDate','System.IterationPath'] });
       items.push(...page);
     }
+    groups.push(['ours', groups.filter(([key]) => ['mine','colleague'].includes(key)).flatMap(([,rows]) => rows)]);
+    items.sort((a,b) => (b.fields?.['System.ChangedDate'] || '').localeCompare(a.fields?.['System.ChangedDate'] || ''));
     return items.map(w => ({ id: String(w.id), title: w.fields?.['System.Title'] || '', state: w.fields?.['System.State'] || '',
-      type: w.fields?.['System.WorkItemType'] || '', assignedTo: w.fields?.['System.AssignedTo']?.displayName || '',
+      type: w.fields?.['System.WorkItemType'] || '', assignedTo: typeof w.fields?.['System.AssignedTo'] === 'string'
+        ? w.fields['System.AssignedTo'].replace(/\s*<[^>]+>$/, '') : w.fields?.['System.AssignedTo']?.displayName || '',
       iteration: w.fields?.['System.IterationPath'] || '', createdAt: w.fields?.['System.CreatedDate'] || '',
       buckets: groups.filter(([,rows]) => rows.some(r => r.id === w.id)).map(([key]) => key),
-      url: this.baseURL() + '/_workitems/edit/' + w.id,
+      url: this.baseURL(project) + '/_workitems/edit/' + w.id,
     }));
   }
 }

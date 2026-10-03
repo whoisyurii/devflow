@@ -6,11 +6,11 @@ This fork keeps Coucou’s 640-point expanding island, compact notch geometry, s
 
 ## In the notch
 
-Click the compact notch to open Coucou’s original two-card overview. Select a pill to move that source into the focus card. Lists and answers expand inside the same notch. Pin keeps it open; Escape folds it away. The companion stays available across Spaces, including fullscreen apps.
+Hover over or click the compact notch to open Coucou’s original two-card overview. Select a pill to move that source into the focus card. Lists and answers expand inside the same notch. Moving away closes it promptly; the pin button keeps it open. Escape folds it away, and the next hover restores your last view. The companion stays available across Spaces, including fullscreen apps.
 
 - **Claude Code / Codex:** separate local sessions, live hook events, permission-needed announcements, completed answers, searchable recent history, Markdown/code rendering and copy. Codex answers can open their original chat.
-- **Azure DevOps:** my PRs, requested reviews, a configured colleague’s PRs, all open PRs in the selected repository, reviewer votes, matching build results, active/queued and recent pipeline runs. Rows open Azure for changes and logs.
-- **Work items:** assigned to me, created today, current sprint (requires a team), due today (requires the process’s actual due-date field).
+- **Azure DevOps:** my PRs, requested reviews, a configured colleague’s PRs, all open PRs in the selected repository, reviewer votes, matching build results, **Today / All** pipeline filters plus an independent **Active only** switch. Today uses the queue date in your Mac’s time zone; All shows the loaded history. Rows open Azure for changes and logs.
+- **Work items:** assigned to both developers, Mine and Colleague filters, created today, current sprint (requires a team), due today (requires the process’s actual due-date field). Date/sprint views include either developer’s assignments. Boards can use a different project from the repository, and an optional work-item type list matches your board’s scope.
 - **Inbox:** durable unread session and Azure updates. New events peek from the notch without interrupting a pinned detail view. macOS banners are optional.
 
 Azure operations are read-only. DevFlow does not approve agent permissions, merge PRs, edit tickets or run/cancel pipelines.
@@ -28,13 +28,13 @@ Copy the resulting app to `~/Applications` for everyday use. Add it to macOS **L
 
 ## Azure setup
 
-Open **Settings → Azure DevOps**, enter your organization, project and repository, and choose **Save and connect**. Leave **My email** empty to use the signed-in Azure account. Enter your colleague’s Azure identity email to enable that filter.
+Open **Settings → Azure DevOps**, enter your organization, project and repository, and choose **Save and connect**. Leave **My email** empty to use the signed-in Azure account. Enter your colleague’s Azure identity email to enable their PR and work-item filters. In the Work items section, set Project when Boards live elsewhere, Team for the current sprint, and optionally a comma-separated Types list from that board. A blank work-item project uses the repository project.
 
 The default is the official [`@azure-devops/mcp`](https://github.com/microsoft/azure-devops-mcp) server and its normal Microsoft browser/localhost authentication. A long-lived local MCP process handles all polling while the app runs. DevFlow does not extract or assume a reusable token from Claude or Codex. On launch, connect once; the Microsoft server controls when reauthentication is needed.
 
 Existing Azure CLI authentication is an alternative. An optional PAT is stored in macOS Keychain under `devflow.azure-devops`, never in settings. Bearer-token environment mode is also available. The configured organization and project must be accessible to that identity.
 
-The Reviews view includes open PRs where you are an assigned reviewer, including ones you already voted on; hover a row for reviewer votes. PR build badges only describe matching PR merge-commit builds; they are **not** a claim that every Azure branch policy has passed. Pipeline and work-item queries are bounded: up to 100 recent builds plus 100 running and 100 queued builds, and up to 200 work items per view. PR discovery paginates up to 2,000 open PRs.
+The Reviews view includes open PRs where you are an assigned reviewer, including ones you already voted on; hover a row for reviewer votes. PR build badges only describe matching PR merge-commit builds; they are **not** a claim that every Azure branch policy has passed. Pipeline and work-item queries are bounded: up to 100 recent builds plus 100 running and 100 queued builds, and up to 200 work items per query (the Both view combines the two assignment queries). PR discovery paginates up to 2,000 open PRs.
 
 ## Local session hooks
 
@@ -69,7 +69,7 @@ To remove DevFlow hooks, quit the app and remove only commands referring to `App
 ./scripts/test.sh
 ```
 
-Tests cover concurrent sessions, answer persistence and replay, history import, hook merging/backups/stale previews, the real Unix relay and daemon, Azure parsing, build matching, independent refresh baselines and cache recovery. Native compilation uses Swift 6; interface checks include notch overview, Azure lists and session answers.
+Tests cover concurrent sessions, answer persistence and replay, history import, hook merging/backups/stale previews, the real Unix relay and daemon, Azure parsing, build matching, independent refresh baselines, cross-project work-item scope, local-day pipeline filters (including DST), hover/close behavior and cache recovery. Native compilation uses Swift 6; interface checks include notch overview, Azure lists and session answers.
 
 ## Upstream and licensing
 
