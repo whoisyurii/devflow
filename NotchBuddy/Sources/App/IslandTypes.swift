@@ -34,7 +34,7 @@ enum DetailSection: String, CaseIterable {
         case .claude: "Claude Code"
         case .codex: "Codex"
         case .myPRs: "My PRs"
-        case .toReview: "To review"
+        case .toReview: "Reviews"
         case .colleague: "Colleague"
         case .allPRs: "All PRs"
         case .pipelines: "Pipelines"

@@ -34,7 +34,7 @@ The default is the official [`@azure-devops/mcp`](https://github.com/microsoft/a
 
 Existing Azure CLI authentication is an alternative. An optional PAT is stored in macOS Keychain under `devflow.azure-devops`, never in settings. Bearer-token environment mode is also available. The configured organization and project must be accessible to that identity.
 
-PR build badges only describe matching PR merge-commit builds; they are **not** a claim that every Azure branch policy has passed. Pipeline and work-item queries are bounded: up to 100 recent builds plus 100 running and 100 queued builds, and up to 200 work items per view. PR discovery paginates up to 2,000 open PRs.
+The Reviews view includes open PRs where you are an assigned reviewer, including ones you already voted on; hover a row for reviewer votes. PR build badges only describe matching PR merge-commit builds; they are **not** a claim that every Azure branch policy has passed. Pipeline and work-item queries are bounded: up to 100 recent builds plus 100 running and 100 queued builds, and up to 200 work items per view. PR discovery paginates up to 2,000 open PRs.
 
 ## Local session hooks
 

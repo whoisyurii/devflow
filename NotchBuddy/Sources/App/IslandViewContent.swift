@@ -106,7 +106,7 @@ struct AzurePulseCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 AzureStatRow(icon: "arrow.triangle.pull", iconColor: "#60A5FA", label: "My PRs",
                              value: "\(state.snapshot.pullRequests.filter { $0.buckets.contains("mine") }.count)") { state.show(.myPRs) }
-                AzureStatRow(icon: "eye", iconColor: "#8AB4F8", label: "To review",
+                AzureStatRow(icon: "eye", iconColor: "#8AB4F8", label: "Reviews",
                              value: "\(state.snapshot.pullRequests.filter(\.reviewRequested).count)") { state.show(.toReview) }
                 let active = state.snapshot.pipelines.filter { ["running", "queued"].contains($0.status) }.count
                 AzureStatRow(icon: "checkmark.seal.fill", iconColor: active > 0 ? "#F5A524" : "#6B7079",

@@ -151,7 +151,7 @@ export class Store {
           this.notice(stableID('build', item.id, item.status), 'Pipeline ' + item.status, item.name + ' · ' + item.branch, { url: item.url });
         }
         if (kind === 'pullRequests' && item.reviewRequested && !old?.reviewRequested) {
-          this.notice(stableID('review', item.id), 'Review requested', item.title, { url: item.url });
+          this.notice(stableID('review', item.id), 'Added as reviewer', item.title, { url: item.url });
         }
         if (kind === 'workItems' && !old && item.buckets.includes('today')) {
           this.notice(stableID('workitem', item.id), 'New work item today', item.title, { url: item.url });
