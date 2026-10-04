@@ -11,9 +11,14 @@ fi
 mkdir -p DevFlow/Resources/bridge
 rsync -a --delete bridge/ DevFlow/Resources/bridge/
 (cd DevFlow && xcodegen generate)
-xcodebuild -project DevFlow/DevFlow.xcodeproj -scheme DevFlow -configuration Debug \
+devflow_configuration=${CONFIGURATION:-Release}
+if [[ "$devflow_configuration" != Release && "$devflow_configuration" != Debug ]]; then
+  echo "CONFIGURATION must be Release or Debug" >&2
+  exit 1
+fi
+xcodebuild -project DevFlow/DevFlow.xcodeproj -scheme DevFlow -configuration "$devflow_configuration" \
   -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
 # Locally sign the internal bundle; this is not a Developer ID distribution
 # or notarization step and does not require a signing certificate.
-codesign --force --sign - --identifier dev.devflow.companion build/Build/Products/Debug/DevFlow.app
-echo "Built: $(pwd)/build/Build/Products/Debug/DevFlow.app"
+codesign --force --sign - --identifier dev.devflow.companion "build/Build/Products/$devflow_configuration/DevFlow.app"
+echo "Built: $(pwd)/build/Build/Products/$devflow_configuration/DevFlow.app"

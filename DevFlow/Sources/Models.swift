@@ -19,12 +19,12 @@ struct Settings: Codable, Equatable, Sendable {
     var showNotch = true
     var importHistory = true
 }
-struct Answer: Codable, Identifiable, Sendable {
+struct Answer: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let text: String
     let date: String
 }
-struct SessionRecord: Codable, Identifiable, Sendable {
+struct SessionRecord: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let agent: String
     let externalID: String
@@ -45,7 +45,7 @@ struct SessionRecord: Codable, Identifiable, Sendable {
     var displayTitle: String { title.isEmpty ? project : title }
     var active: Bool { ["working", "thinking", "waiting"].contains(state) }
 }
-struct Activity: Codable, Identifiable, Sendable {
+struct Activity: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let title: String
     let body: String
@@ -61,8 +61,8 @@ struct Activity: Codable, Identifiable, Sendable {
     var pending: String?
     var agentName: String { agent == "codex" ? "Codex" : agent == "claude" ? "Claude Code" : "DevFlow" }
 }
-struct Reviewer: Codable, Sendable { let name: String; let vote: Int }
-struct PullRequest: Codable, Identifiable, Sendable {
+struct Reviewer: Codable, Equatable, Sendable { let name: String; let vote: Int }
+struct PullRequest: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let title: String
     let author: String
@@ -76,7 +76,7 @@ struct PullRequest: Codable, Identifiable, Sendable {
     let checks: String
     let url: String
 }
-struct Pipeline: Codable, Identifiable, Sendable {
+struct Pipeline: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let name: String
     let number: String
@@ -89,7 +89,7 @@ struct Pipeline: Codable, Identifiable, Sendable {
     let finishedAt: String
     let url: String
 }
-struct WorkItem: Codable, Identifiable, Sendable {
+struct WorkItem: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let title: String
     let state: String
@@ -100,7 +100,7 @@ struct WorkItem: Codable, Identifiable, Sendable {
     let buckets: [String]
     let url: String
 }
-struct Snapshot: Decodable, Sendable {
+struct Snapshot: Decodable, Equatable, Sendable {
     var sessions: [SessionRecord] = []
     var activity: [Activity] = []
     var pullRequests: [PullRequest] = []
@@ -113,9 +113,11 @@ struct Snapshot: Decodable, Sendable {
     var settings = Settings()
 }
 
+// Shared immutable format styles avoid rebuilding ISO8601 formatters per row.
+private let fractionalDateStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+private let wholeDateStyle = Date.ISO8601FormatStyle()
+
 func displayDate(_ string: String) -> String {
-    let parser = ISO8601DateFormatter()
-    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    let date = parser.date(from: string) ?? ISO8601DateFormatter().date(from: string)
+    let date = (try? fractionalDateStyle.parse(string)) ?? (try? wholeDateStyle.parse(string))
     return date?.formatted(date: .abbreviated, time: .shortened) ?? string
 }

@@ -23,8 +23,10 @@ Requires macOS 15+, Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 
 ```sh
 ./scripts/build.sh
-open build/Build/Products/Debug/DevFlow.app
+open build/Build/Products/Release/DevFlow.app
 ```
+
+Builds are optimized for daily use. For debugging, run `CONFIGURATION=Debug ./scripts/build.sh`.
 
 Copy the resulting app to `~/Applications` for everyday use. Add it to macOS **Login Items** if you want it to start at login. The build receives a local ad-hoc signature. This is an internal development build, not a Developer ID signed or notarized release.
 

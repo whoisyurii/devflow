@@ -10,4 +10,6 @@ if command -v swiftc >/dev/null; then
     swiftc "NotchBuddy/Sources/App/${suite}.swift" "tests/${suite}Tests.swift" -o "$devflow_test_dir/$suite"
     "$devflow_test_dir/$suite"
   done
+  swiftc -swift-version 6 DevFlow/Sources/Models.swift DevFlow/Sources/BridgeStream.swift tests/BridgeStreamTests.swift -o "$devflow_test_dir/BridgeStream"
+  "$devflow_test_dir/BridgeStream"
 fi

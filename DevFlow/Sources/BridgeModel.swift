@@ -15,7 +15,7 @@ final class BridgeModel {
     @ObservationIgnored private var lastChime = Date.distantPast
     @ObservationIgnored private var process: Process?
     @ObservationIgnored private var input: FileHandle?
-    @ObservationIgnored private var buffer = Data()
+    @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var pending: [String: CheckedContinuation<Data, Error>] = [:]
 
     var unread: Int { snapshot.activity.filter { !$0.read }.count }
@@ -43,26 +43,45 @@ final class BridgeModel {
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         child.standardInput = stdin; child.standardOutput = stdout; child.standardError = stderr
         input = stdin.fileHandleForWriting
-        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        let stream = BridgeStream()
+        streamTask?.cancel()
+        streamTask = Task { @MainActor [weak self] in
+            for await event in stream.events {
+                guard !Task.isCancelled else { break }
+                self?.receive(event)
+            }
+        }
+        stdout.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            guard !data.isEmpty else { handle.readabilityHandler = nil; return }
-            Task { @MainActor [weak self] in self?.receive(data) }
+            guard !data.isEmpty else { handle.readabilityHandler = nil; stream.finish(); return }
+            stream.append(data)
         }
         stderr.fileHandleForReading.readabilityHandler = { handle in
             if handle.availableData.isEmpty { handle.readabilityHandler = nil }
         }
+        // Drain this launch's stdout before marking it stopped. A final response
+        // can still be on the decoding queue when Process reports termination.
+        let consumer = streamTask
         child.terminationHandler = { [weak self] child in
             let status = child.terminationStatus
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                await consumer?.value
+                guard let self, self.process === child else { return }
                 self.ready = false; self.process = nil; self.input = nil
+                self.streamTask = nil
                 if status != 0 { self.error = "The local bridge stopped (exit \(status)). Relaunch DevFlow to reconnect." }
                 for continuation in self.pending.values { continuation.resume(throwing: BridgeError.message("Local bridge stopped.")) }
                 self.pending.removeAll()
             }
         }
         do { try child.run(); process = child }
-        catch { self.error = "Could not start the local bridge: \(error.localizedDescription)" }
+        catch {
+            stdout.fileHandleForReading.readabilityHandler = nil
+            stderr.fileHandleForReading.readabilityHandler = nil
+            stream.finish(); streamTask?.cancel(); streamTask = nil
+            input?.closeFile(); input = nil
+            self.error = "Could not start the local bridge: \(error.localizedDescription)"
+        }
     }
     func stop() {
         input?.closeFile(); input = nil
@@ -70,27 +89,23 @@ final class BridgeModel {
         // SIGTERM also reaches the bridge's graceful shutdown handler.
         if let process, process.isRunning { process.terminate() }
     }
-    private func receive(_ data: Data) {
-        buffer.append(data)
-        while let newline = buffer.firstIndex(of: 10) {
-            let line = Data(buffer[..<newline]); buffer.removeSubrange(...newline)
-            do {
-                guard let object = try JSONSerialization.jsonObject(with: line) as? [String: Any], let type = object["type"] as? String else { continue }
-                if type == "snapshot", let state = object["data"] {
-                    let json = try JSONSerialization.data(withJSONObject: state)
-                    snapshot = try JSONDecoder().decode(Snapshot.self, from: json)
-                    ready = true
-                    NotificationCenter.default.post(name: .devflowStateChanged, object: nil)
-                } else if type == "notice", let value = object["data"] {
-                    let entry = try JSONDecoder().decode(Activity.self, from: JSONSerialization.data(withJSONObject: value))
-                    notify(entry)
-                } else if type == "fatal" {
-                    error = object["message"] as? String ?? "Local bridge failed."
-                } else if type == "response", let id = object["id"] as? String, let continuation = pending.removeValue(forKey: id) {
-                    if let message = object["error"] as? String { continuation.resume(throwing: BridgeError.message(message)) }
-                    else { continuation.resume(returning: try JSONSerialization.data(withJSONObject: object["result"] ?? NSNull(), options: .fragmentsAllowed)) }
-                }
-            } catch { self.error = "Could not read local state: \(error.localizedDescription)" }
+    private func receive(_ event: BridgeStreamEvent) {
+        switch event {
+        case .failure(let message): error = message
+        case .message(let message):
+            switch message {
+            case .snapshot(let state):
+                snapshot = state
+                ready = true
+                NotificationCenter.default.post(name: .devflowStateChanged, object: nil)
+            case .notice(let entry): notify(entry)
+            case .fatal(let message): error = message
+            case .response(let id, let result, let message):
+                guard let continuation = pending.removeValue(forKey: id) else { return }
+                if let message { continuation.resume(throwing: BridgeError.message(message)) }
+                else { continuation.resume(returning: result) }
+            case .ignored: break
+            }
         }
     }
     func request(_ method: String, params: [String: Any] = [:]) async throws -> Data {

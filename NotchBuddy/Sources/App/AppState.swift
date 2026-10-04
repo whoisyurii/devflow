@@ -11,14 +11,18 @@ final class AppState: ObservableObject {
     @Published var workItemSearch = ""
     @Published var sessionID: String?
     @Published var isPinned = false
-    @Published var snapshot = Snapshot()
+    @Published var snapshot = Snapshot() {
+        didSet { tasks = Self.makeTasks(snapshot) }
+    }
     @Published var latestNotice: Activity?
     @Published var notchWidth = IslandConst.notchWidth
     @Published var notchHeight = IslandConst.notchHeight
     var lastActivity = Date.now
     var hasNotch = true
 
-    var tasks: [AgentTask] {
+    // Recompute derived cards once per snapshot, not once per body read.
+    private(set) var tasks = PillCatalog.all
+    private static func makeTasks(_ snapshot: Snapshot) -> [AgentTask] {
         PillCatalog.all.filter { task in
             !["codex", "claude"].contains(task.id) || snapshot.settings.agentProvider == "both" || task.id == snapshot.settings.agentProvider
         }.map { original in
