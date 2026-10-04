@@ -7,7 +7,7 @@ import SwiftUI
 final class IslandWindowController: NSWindowController {
     private var state: AppState { .shared }
     let fsm = IslandStateMachine()
-    private var frameTimer: Timer?
+    private var pointerTimer: Timer?
     private var keyMonitor: Any?
     private var wasInIsland = false
     private var wasPinned = false
@@ -32,15 +32,18 @@ final class IslandWindowController: NSWindowController {
         fsm.onTransition = { [weak self] _, to in
             guard let self else { return }
             // Stay available in the notch even when idle, as requested.
-            self.state.mode = to == .home || to == .coucou ? .expanded : .compact
+            let mode: IslandMode = to == .home || to == .coucou ? .expanded : .compact
+            if self.state.mode != mode { self.state.mode = mode }
             if self.state.mode == .expanded { self.window?.makeKey() }
             else { self.window?.resignKey() }
         }
         fsm.reveal()
-        frameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.pollFrame() }
+        // This samples pointer hit testing, not animation frames. SwiftUI's
+        // animation transaction follows the display's own rendering cadence.
+        pointerTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pollPointer() }
         }
-        RunLoop.main.add(frameTimer!, forMode: .common)
+        RunLoop.main.add(pointerTimer!, forMode: .common)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] event in
             guard let self else { return event }
             if event.type == .keyDown && event.keyCode == 53 { self.collapse(); return nil }
@@ -50,15 +53,17 @@ final class IslandWindowController: NSWindowController {
             return event
         }
         NotificationCenter.default.addObserver(self, selector: #selector(update), name: .devflowStateChanged, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(update), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateScreenGeometry), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(expand), name: .devflowOpenIsland, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(collapse), name: .islandCollapse, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(announce(_:)), name: .devflowNotice, object: nil)
+        updateScreenGeometry()
         update()
     }
 
     @objc private func update() {
-        state.snapshot = BridgeModel.shared.snapshot
+        let snapshot = BridgeModel.shared.snapshot
+        if state.snapshot != snapshot { state.snapshot = snapshot }
         let visibleSessions = Set(state.snapshot.sessions.map(\.id))
         if let notice = state.latestNotice, !notice.sessionID.isEmpty, !visibleSessions.contains(notice.sessionID) {
             state.latestNotice = nil
@@ -72,16 +77,25 @@ final class IslandWindowController: NSWindowController {
             state.section = state.snapshot.settings.agentProvider == "claude" ? .claude : .codex
         }
         if state.view == .answer, state.selectedSession == nil { state.show(state.section) }
-        guard state.snapshot.settings.showNotch else { window?.orderOut(nil); return }
+        guard state.snapshot.settings.showNotch else {
+            if window?.isVisible == true { window?.orderOut(nil) }
+            return
+        }
+        // Data changes must not repeatedly raise or reposition the panel.
+        if window?.isVisible == false { window?.orderFrontRegardless() }
+    }
+    @objc private func updateScreenGeometry() {
         guard let screen = Self.notchScreen() ?? NSScreen.main else { return }
         let geometry = IslandScreenGeometry(screenWidth: screen.frame.width, safeAreaTop: screen.safeAreaInsets.top,
             auxiliaryLeftWidth: screen.auxiliaryTopLeftArea?.width, auxiliaryRightWidth: screen.auxiliaryTopRightArea?.width,
             menuBarHeight: NSStatusBar.system.thickness)
-        state.notchWidth = geometry.width; state.notchHeight = geometry.height; state.hasNotch = geometry.hasNotch
-        window?.setFrameOrigin(NSPoint(x: screen.frame.midX - 360, y: screen.frame.maxY - 420))
-        window?.orderFrontRegardless()
+        if state.notchWidth != geometry.width { state.notchWidth = geometry.width }
+        if state.notchHeight != geometry.height { state.notchHeight = geometry.height }
+        state.hasNotch = geometry.hasNotch
+        let origin = NSPoint(x: screen.frame.midX - 360, y: screen.frame.maxY - 420)
+        if window?.frame.origin != origin { window?.setFrameOrigin(origin) }
     }
-    private func pollFrame() {
+    private func pollPointer() {
         guard let panel = window as? IslandPanel, panel.isVisible else { return }
         let mouse = NSEvent.mouseLocation
         let local = CGPoint(x: mouse.x - panel.frame.minX, y: mouse.y - panel.frame.minY)
@@ -98,7 +112,8 @@ final class IslandWindowController: NSWindowController {
         }
     }
     @objc func expand() {
-        state.mode = .expanded; fsm.openedExternally(); state.lastActivity = .now
+        if state.mode != .expanded { state.mode = .expanded }
+        fsm.openedExternally(); state.lastActivity = .now
         window?.orderFrontRegardless(); window?.makeKey()
         // Notices/menu opens get reading time; ordinary pointer exits close promptly.
         if !wasInIsland { fsm.mouseLeft(after: 4) }
@@ -106,7 +121,9 @@ final class IslandWindowController: NSWindowController {
     @objc func collapse() {
         noticeQueue.removeAll()
         state.isPinned = false; state.latestNotice = nil
-        fsm.collapse(); state.mode = .compact; window?.resignKey()
+        fsm.collapse()
+        if state.mode != .compact { state.mode = .compact }
+        window?.resignKey()
     }
     @objc private func announce(_ note: Notification) {
         guard let entry = note.object as? Activity else { return }

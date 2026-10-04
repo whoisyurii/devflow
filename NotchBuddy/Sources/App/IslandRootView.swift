@@ -16,17 +16,18 @@ struct IslandRootView: View {
 
 struct IslandContainer: View {
     @ObservedObject var state: AppState
-    @State private var islandWidth = IslandConst.notchWidth
-    @State private var islandHeight = IslandConst.notchHeight
-    @State private var cornerRadius = IslandConst.roundedCorner
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let openSpring = Animation.spring(response: 0.28, dampingFraction: 0.9)
     private let closeEase = Animation.easeOut(duration: 0.16)
     private var targetSize: CGSize {
         let (width, height) = islandSize(mode: state.mode, view: state.view, nw: state.notchWidth, nh: state.notchHeight)
         return CGSize(width: width, height: height)
     }
+    private var cornerRadius: CGFloat { state.mode == .expanded ? IslandConst.expandedCorner : IslandConst.roundedCorner }
 
     var body: some View {
+        let islandWidth = targetSize.width
+        let islandHeight = targetSize.height
         ZStack(alignment: .topLeading) {
             IslandShape(width: islandWidth, height: islandHeight,
                         cornerRadius: cornerRadius, topRadius: 0).fill(Color.black)
@@ -34,8 +35,6 @@ struct IslandContainer: View {
                 IslandContentView(state: state)
                     // Keep list/text layout stable while the outer island morphs.
                     .frame(width: IslandConst.expandedWidth, height: state.view == .overview ? 160 : 360)
-                    .clipShape(IslandShape(width: islandWidth, height: islandHeight,
-                                          cornerRadius: cornerRadius, topRadius: 0))
                     .transition(.opacity)
             } else if state.mode == .compact {
                 PillSymbol(task: state.focusTask)
@@ -48,15 +47,11 @@ struct IslandContainer: View {
             }
         }
         .frame(width: islandWidth, height: islandHeight, alignment: .topLeading)
-        .onAppear { resize() }
-        .onChange(of: targetSize) { _, _ in
-            withAnimation(state.mode == .expanded ? openSpring : closeEase) { resize() }
-        }
-    }
-    private func resize() {
-        (islandWidth, islandHeight) = islandSize(mode: state.mode, view: state.view,
-                                                nw: state.notchWidth, nh: state.notchHeight)
-        cornerRadius = state.mode == .expanded ? IslandConst.expandedCorner : IslandConst.roundedCorner
+        .clipShape(IslandShape(width: islandWidth, height: islandHeight,
+                              cornerRadius: cornerRadius, topRadius: 0))
+        // Content insertion/removal and the shell now share one transaction.
+        // A shared mask also clips outgoing content as the island closes.
+        .animation(reduceMotion ? nil : state.mode == .expanded ? openSpring : closeEase, value: targetSize)
     }
 }
 

@@ -6,6 +6,16 @@ struct ChatMarkdownView: View {
     let markdown: String
 
     var body: some View {
+        // Finished answers are immutable. Unrelated live session updates should
+        // not parse their Markdown and attributed text again.
+        ParsedChatMarkdownView(markdown: markdown).equatable()
+    }
+}
+
+private struct ParsedChatMarkdownView: View, Equatable {
+    let markdown: String
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(ChatMarkdown.parse(markdown).enumerated()), id: \.offset) { _, block in
                 blockView(block)

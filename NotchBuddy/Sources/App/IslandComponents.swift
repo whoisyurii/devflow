@@ -20,7 +20,7 @@ struct AgentPillsView: View {
             Spacer(minLength: 0)
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(displayTasks) { task in
-                    AgentPill(task: task, state: state, swapping: $swapping) {
+                    AgentPill(task: task, swapping: $swapping) {
                         swapping = true
                         state.setFocus(task.id)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { swapping = false }
@@ -36,7 +36,6 @@ struct AgentPillsView: View {
 
 struct AgentPill: View {
     let task: AgentTask
-    @ObservedObject var state: AppState
     @Binding var swapping: Bool
     let onTap: () -> Void
     @State private var isHovered = false

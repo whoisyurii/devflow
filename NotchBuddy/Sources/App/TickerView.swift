@@ -31,7 +31,7 @@ struct TickerView: View {
             Color.clear
 
             // Row A: completed row — always rendered at phase=1 + completedScale
-            TickerRowView(text: rowA, phase: 1.0, isActive: isActive)
+            TickerRowView(text: rowA, phase: 1.0, isActive: isActive, isVisible: rowAOpacity > 0)
                 .scaleEffect(completedScale, anchor: .leading)
                 .offset(x: -10, y: rowAOffset)
                 .opacity(rowAOpacity)
@@ -42,7 +42,7 @@ struct TickerView: View {
                 .offset(x: -rowBPhase * 10, y: rowBOffset)
 
             // Row C: incoming new step — slides in from below at phase=0
-            TickerRowView(text: rowC, phase: 0.0, isActive: isActive)
+            TickerRowView(text: rowC, phase: 0.0, isActive: isActive, isVisible: rowCOpacity > 0)
                 .offset(y: rowCOffset)
                 .opacity(rowCOpacity)
         }
@@ -122,6 +122,7 @@ struct TickerRowView: View {
     let text: String
     let phase: Double   // 0 = current (shimmer, large), 1 = completed (dim, scaled down by caller)
     var isActive: Bool = true
+    var isVisible: Bool = true
 
     var body: some View {
         let chevronOpacity:   Double = isActive ? max(0, 1 - phase * 2)       : 0
@@ -147,7 +148,7 @@ struct TickerRowView: View {
 
                 // Text: shimmer fades out, dim completed text fades in (overlapping cross-fade)
                 ZStack(alignment: .leading) {
-                    TickerShimmerText(text: text)
+                    TickerShimmerText(text: text, isActive: isVisible && shimmerOpacity > 0)
                         .opacity(shimmerOpacity)
                     Text(text)
                         .font(.system(size: 13, weight: .medium))
@@ -163,9 +164,11 @@ struct TickerRowView: View {
 
 struct TickerShimmerText: View {
     let text: String
+    let isActive: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation) { tl in
+        TimelineView(.animation(paused: !isActive || reduceMotion)) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate
             let p = CGFloat(t.truncatingRemainder(dividingBy: 2.2) / 2.2)
             // phase sweeps -0.1 → 1.1 so white peak enters from left and exits right
