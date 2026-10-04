@@ -1,4 +1,4 @@
-import { realpath, readFile, stat, open } from 'node:fs/promises';
+import { realpath, readFile, stat, open, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 const canonical = async path => realpath(path).catch(() => resolve(path));
@@ -28,7 +28,21 @@ export async function transcriptName(path, agent, home = homedir()) {
 }
 
 export class SessionScope {
-  constructor(settings) { this.settings = settings; this.cache = new Map(); }
+  constructor(settings) { this.settings = settings; this.cache = new Map(); this.worktrees = null; }
+  async roots(anchor, refresh = false) {
+    if (!refresh && this.worktrees?.common === anchor.gitCommonDirectory && Date.now() - this.worktrees.at < 5000) return this.worktrees.roots;
+    const roots = [anchor.worktreePath];
+    if (basename(anchor.gitCommonDirectory) === '.git') roots.push(dirname(anchor.gitCommonDirectory));
+    const registry = join(anchor.gitCommonDirectory, 'worktrees');
+    for (const name of (await readdir(registry).catch(() => [])).slice(0,1000)) {
+      try {
+        const pointer = (await readFile(join(registry, name, 'gitdir'), 'utf8')).trim();
+        if (isAbsolute(pointer)) roots.push(await canonical(dirname(pointer)));
+      } catch {}
+    }
+    this.worktrees = { common: anchor.gitCommonDirectory, at: Date.now(), roots };
+    return roots;
+  }
   async inspect(cwd, refresh = false) {
     if (!cwd || !isAbsolute(cwd)) return null;
     const cached = this.cache.get(cwd);
@@ -73,6 +87,12 @@ export class SessionScope {
     const settings = this.settings();
     const anchor = await this.inspect(settings.sessionRepositoryPath);
     if (!anchor) return null;
+    if (!cwd || !isAbsolute(cwd)) return null;
+    const path = await canonical(cwd);
+    const verifiedFallback = fallback?.gitCommonDirectory === anchor.gitCommonDirectory && fallback.cwd === path;
+    // Reject unrelated projects before opening their Git metadata. Enumerate
+    // only this repository's worktree registry, including trees outside its root.
+    if (!(await this.roots(anchor, refresh)).some(root => within(root, path)) && !verifiedFallback) return null;
     const info = await this.inspect(cwd, refresh)
       || (fallback?.cwd && cwd && fallback.cwd === await canonical(cwd) ? fallback : null);
     if (!info?.cwd || !info.worktreePath || info.gitCommonDirectory !== anchor.gitCommonDirectory || !within(info.worktreePath, info.cwd)) return null;
@@ -100,6 +120,7 @@ export class SessionMonitor {
   }
   async reconcile() {
     this.scope.cache.clear();
+    this.scope.worktrees = null;
     const kept = [];
     for (const session of this.store.state.sessions) {
       const info = await this.scope.match(session.cwd, { fallback: session });

@@ -86,7 +86,7 @@ catch(error) {
 await chmod(socketPath,0o600);
 server.on('error',e=>{store.state.errors=['Local event listener: '+e.message];store.publish();});
 store.publish();
-if(!process.argv.includes('--no-history')) await history.importRecent();
+if(!process.argv.includes('--no-history')) history.importRecent().catch(()=>{});
 const historyTimer=setInterval(()=>history.importRecent().catch(()=>{}),60000);
 
 async function command(message) {

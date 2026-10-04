@@ -16,6 +16,10 @@ export const blankState = () => ({
 export const stableID = (...parts) => createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 32);
 export const now = () => new Date().toISOString();
 export function text(value, limit = 200000) { return typeof value === 'string' ? value.slice(0, limit) : ''; }
+function promptTitle(value) {
+  const prompt = text(value).trim();
+  return /^# AGENTS\.md|^<(?:skill|in-app-browser-context|realtime_delegation|environment_context|permissions|app-context|turn_aborted|send_user_message_question_reply)\b/.test(prompt) ? '' : text(prompt, 200);
+}
 
 export async function atomicJSON(path, data) {
   const temporary = path + '.' + process.pid + '.tmp';
@@ -106,8 +110,10 @@ export class Store {
     }
     if (historical && session.source === 'hooks' && timestamp <= session.updatedAt) {
       // History can fill answers, but must not revert a newer live state.
+      if (name === 'UserPromptSubmit' && !promptTitle(session.title)) session.title = promptTitle(payload.prompt);
       if (!['Stop','SessionNamed'].includes(name)) return;
     }
+    if (!session.named && !promptTitle(session.title)) session.title = '';
     const isNewer = timestamp >= session.updatedAt;
     const cwd = text(payload.cwd, 4000);
     if (isNewer || !session.cwd) {
@@ -136,7 +142,7 @@ export class Store {
       case 'SessionNamed': if(payload.session_name) { session.title = text(payload.session_name, 200); session.named = true; } break;
       case 'UserPromptSubmit':
         setState('thinking'); session.pending = ''; session.pendingKey = '';
-        if (payload.prompt) { if (!session.title) session.title = text(payload.prompt, 200); step(payload.prompt); }
+        if (payload.prompt) { if (!session.title) session.title = promptTitle(payload.prompt); step(payload.prompt); }
         break;
       case 'PreToolUse':
         if (/AskUserQuestion|request_user_input/i.test(payload.tool_name || '')) {

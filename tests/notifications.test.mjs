@@ -44,3 +44,13 @@ test('historical answers cannot clear a newer pending prompt or generate a live 
   assert.equal(store.state.sessions[0].state,'waiting'); assert.ok(store.state.sessions[0].pending);
   assert.equal(notices.length,1);
 });
+
+test('ambient Codex messages do not become names and older history can fill the title without changing live status', t => {
+  const {store,emit}=fixture(t);
+  emit('UserPromptSubmit',{prompt:'<send_user_message_question_reply>fixture</send_user_message_question_reply>',timestamp:'2026-10-04T12:00:00Z'});
+  emit('PermissionRequest',{tool_name:'Bash',timestamp:'2026-10-04T12:01:00Z'});
+  store.ingest({agent:'claude',session_id:'one',hook_event_name:'UserPromptSubmit',prompt:'Actual session task',timestamp:'2026-10-03T12:00:00Z'},{historical:true});
+  assert.equal(store.state.sessions[0].title,'Actual session task');
+  assert.equal(store.state.sessions[0].state,'waiting');
+  assert.equal(store.state.sessions[0].updatedAt,'2026-10-04T12:01:00.000Z');
+});

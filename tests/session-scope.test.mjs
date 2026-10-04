@@ -118,3 +118,13 @@ test('live previews can use the latest explicit transcript name without reading 
   await symlink(outside,join(directory,'escape.jsonl'));
   assert.equal(await transcriptName(join(directory,'escape.jsonl'),'claude',root),'');
 });
+
+test('unrelated repositories are rejected before their Git metadata is opened', async t => {
+  const {other,monitor}=await setup(t);
+  const inspect=monitor.scope.inspect.bind(monitor.scope);
+  monitor.scope.inspect=async (cwd,...args)=>{
+    assert.ok(!cwd.startsWith(other),'Must not inspect another repository');
+    return inspect(cwd,...args);
+  };
+  assert.equal(await monitor.scope.match(join(other,'React.BFF','ClientApp')),null);
+});
