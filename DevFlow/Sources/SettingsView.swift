@@ -61,6 +61,26 @@ struct DevFlowSettingsView: View {
             }
             Tab("Local sessions", systemImage: "terminal") {
                 Form {
+                    Section("Tracked project") {
+                        HStack {
+                            TextField("Repository checkout", text: $draft.sessionRepositoryPath, prompt: Text("/path/to/your/repository"))
+                            Button("Choose folder…") { chooseRepository() }
+                        }
+                        TextField("Project folder", text: $draft.sessionSubdirectory)
+                        Toggle("Include sessions at the repository root", isOn: $draft.includeRepositoryRoot)
+                        Text("Only this Git repository is tracked. Linked worktrees are matched automatically; React.BFF includes ClientApp and its other subfolders.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Section("Visible AI agent") {
+                        Picker("Show", selection: $draft.agentProvider) {
+                            Text("Codex only").tag("codex")
+                            Text("Claude Code only").tag("claude")
+                            Text("Both agents").tag("both")
+                        }
+                        Text("Single-agent mode gives the focus card more room. Switch here or in the notch header. In-scope history is retained for both agents; alerts follow the selected agent.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Save project and agent") { save(connect: false) }.disabled(!model.ready || saving)
+                    }
                     Section("Claude Code and Codex") {
                         Text("Install DevFlow’s local event hooks to follow each session immediately. Existing hooks are preserved and configuration files are backed up.")
                         Text("Permission requests stay in the original agent. DevFlow only announces that input is needed.").font(.caption).foregroundStyle(.secondary)
@@ -71,7 +91,7 @@ struct DevFlowSettingsView: View {
                     }
                     Section("Recent history") {
                         Toggle("Import recent sessions from this Mac", isOn: $draft.importHistory)
-                        Text("Reads up to 100 recent transcript files per agent. Live hooks retain the latest 50 completed answers per session. Imported history can be incomplete for very large transcripts.").font(.caption).foregroundStyle(.secondary)
+                        Text("Imports up to 100 matching transcripts per agent, checking at most 2,000 recent files. Live hooks retain the latest 50 completed answers per session. Imported history can be incomplete for very large transcripts.").font(.caption).foregroundStyle(.secondary)
                         Button("Save session preferences") { save(connect: false) }
                     }
                     Section("Workflow milestones") {
@@ -85,6 +105,13 @@ struct DevFlowSettingsView: View {
                     Section("Appearance and alerts") {
                         Toggle("Show the notch companion", isOn: $draft.showNotch)
                         Toggle("Notify about meaningful changes", isOn: $draft.notifications)
+                        Toggle("Play the soft notification chime", isOn: $draft.notificationSound)
+                        Button("Preview chime") { model.playChime(preview: true) }
+                        HStack {
+                            Button("Preview Codex alert") { model.previewNotification(agent: "codex") }
+                            Button("Preview Claude alert") { model.previewNotification(agent: "claude") }
+                        }
+                        Text(model.notificationStatus).font(.caption).foregroundStyle(.secondary)
                         Button("Enable macOS notifications") { model.requestNotifications() }
                         Button("Save preferences") { save(connect: false) }
                     }
@@ -97,8 +124,9 @@ struct DevFlowSettingsView: View {
             }
         }
         .padding(12).frame(width: 650, height: 730)
-        .onAppear { loadDraft() }
+        .onAppear { loadDraft(); model.checkNotifications() }
         .onChange(of: model.ready) { loadDraft() }
+        .onChange(of: model.snapshot.settings.agentProvider) { _, agent in draft.agentProvider = agent }
         .sheet(isPresented: $showingPreview) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Review local hook changes").font(.title2.bold())
@@ -112,6 +140,16 @@ struct DevFlowSettingsView: View {
         } message: { Text(model.error) }
     }
     private func loadDraft() { if model.ready && !loaded { draft = model.snapshot.settings; loaded = true } }
+    private func chooseRepository() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose your repository checkout"
+        panel.prompt = "Use repository"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        if !draft.sessionRepositoryPath.isEmpty { panel.directoryURL = URL(fileURLWithPath: draft.sessionRepositoryPath) }
+        if panel.runModal() == .OK, let url = panel.url { draft.sessionRepositoryPath = url.path }
+    }
     private func save(connect: Bool) {
         saving = true
         Task {

@@ -10,6 +10,11 @@ struct Settings: Codable, Equatable, Sendable {
     var workItemTypes = ""
     var authentication = "interactive"
     var tokenEnvironmentVariable = "ADO_MCP_AUTH_TOKEN"
+    var sessionRepositoryPath = ""
+    var sessionSubdirectory = "React.BFF"
+    var includeRepositoryRoot = true
+    var agentProvider = "both"
+    var notificationSound = true
     var notifications = true
     var showNotch = true
     var importHistory = true
@@ -33,6 +38,9 @@ struct SessionRecord: Codable, Identifiable, Sendable {
     let steps: [Answer]
     let transcriptPath: String
     let source: String
+    var worktree: String?
+    var worktreePath: String?
+    var pending: String?
     var agentName: String { agent == "codex" ? "Codex" : "Claude Code" }
     var displayTitle: String { title.isEmpty ? project : title }
     var active: Bool { ["working", "thinking", "waiting"].contains(state) }
@@ -45,6 +53,13 @@ struct Activity: Codable, Identifiable, Sendable {
     let read: Bool
     let url: String
     let sessionID: String
+    var agent: String?
+    var sessionTitle: String?
+    var worktree: String?
+    var branch: String?
+    var cwd: String?
+    var pending: String?
+    var agentName: String { agent == "codex" ? "Codex" : agent == "claude" ? "Claude Code" : "DevFlow" }
 }
 struct Reviewer: Codable, Sendable { let name: String; let vote: Int }
 struct PullRequest: Codable, Identifiable, Sendable {

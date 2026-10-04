@@ -13,4 +13,7 @@ rsync -a --delete bridge/ DevFlow/Resources/bridge/
 (cd DevFlow && xcodegen generate)
 xcodebuild -project DevFlow/DevFlow.xcodeproj -scheme DevFlow -configuration Debug \
   -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+# Locally sign the internal bundle; this is not a Developer ID distribution
+# or notarization step and does not require a signing certificate.
+codesign --force --sign - --identifier dev.devflow.companion build/Build/Products/Debug/DevFlow.app
 echo "Built: $(pwd)/build/Build/Products/Debug/DevFlow.app"

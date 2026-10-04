@@ -20,6 +20,8 @@ targets:
     sources:
       - path: Sources
       - path: ../NotchBuddy/Sources/App
+      - path: Resources/DevFlowChime.wav
+        buildPhase: resources
       - path: Resources/bridge
         type: folder
         buildPhase: resources

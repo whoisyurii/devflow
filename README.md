@@ -2,15 +2,17 @@
 
 A macOS notch companion for a small development team using **Claude Code, Codex and Azure DevOps**. Based on [Coucou](https://github.com/Louis-CFM/coucou) by Louis Raillé.
 
-This fork keeps Coucou’s 640-point expanding island, compact notch geometry, spring transitions, focused card, four shortcut pills, card backgrounds, hover effects, badges, session ticker and Markdown renderer. Its GitHub statistic rows and PR rows are adapted to Azure DevOps. There is no separate dashboard, chat provider, GitHub connection, n8n, mail, music or billing integration.
+This fork keeps Coucou’s 640-point expanding island, compact notch geometry, spring transitions, focused card, shortcut pills, card backgrounds, hover effects, badges, session ticker and Markdown renderer. Its GitHub statistic rows and PR rows are adapted to Azure DevOps. There is no separate dashboard, chat provider, GitHub connection, n8n, mail, music or billing integration.
 
 ## In the notch
 
 Hover over or click the compact notch to open Coucou’s original two-card overview. Select a pill to move that source into the focus card. Lists and answers expand inside the same notch. Moving away closes it promptly; the pin button keeps it open. Escape folds it away, and the next hover restores your last view. The companion stays available across Spaces, including fullscreen apps.
 
-- **Claude Code / Codex:** separate local sessions, live hook events, permission-needed announcements, completed answers, searchable recent history, Markdown/code rendering and copy. Codex answers can open their original chat.
+- **Claude Code / Codex:** separate local sessions, live hook events, permission-needed announcements, completed answers, searchable recent history, Markdown/code rendering and copy. Codex answers can open their original chat. Only the configured repository’s React.BFF tree (including ClientApp), and optionally its root, appears. Linked Git worktrees are included automatically and display their branch and worktree name.
 - **Azure DevOps:** my PRs, requested reviews, a configured colleague’s PRs, all open PRs in the selected repository, reviewer votes, matching build results, **Today / All** pipeline filters plus an independent **Active only** switch. Today uses the queue date in your Mac’s time zone; All shows the loaded history. Rows open Azure for changes and logs.
 - **Work items:** your own open assignments, All / Created today, exact Azure status filtering and title/#ID search. Status and search filters combine with the date choice; counts and a clear action make the active scope visible. Boards can use a different project from the repository, and an optional work-item type list matches your board’s scope. Each developer sees their own assignments; colleague settings apply only to PRs.
+- **Agent choice:** the header menu switches between Codex only, Claude Code only and both. A single agent gets a wider focus card with three stacked shortcuts; both histories are retained and only the selected agent alerts.
+- **Notifications:** completions, permission requests, input questions and agent failures show the agent, session title, worktree, branch and pending action in the notch. An original 0.72-second soft two-note chime is enabled by default; preview or mute it in Settings → Companion.
 - **Inbox:** durable unread session and Azure updates. New events peek from the notch without interrupting a pinned detail view. macOS banners are optional.
 
 Azure operations are read-only. DevFlow does not approve agent permissions, merge PRs, edit tickets or run/cancel pipelines.
@@ -24,7 +26,7 @@ Requires macOS 15+, Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 open build/Build/Products/Debug/DevFlow.app
 ```
 
-Copy the resulting app to `~/Applications` for everyday use. Add it to macOS **Login Items** if you want it to start at login. This is an unsigned internal development build, not a notarized release.
+Copy the resulting app to `~/Applications` for everyday use. Add it to macOS **Login Items** if you want it to start at login. The build receives a local ad-hoc signature. This is an internal development build, not a Developer ID signed or notarized release.
 
 ## Azure setup
 
@@ -38,11 +40,15 @@ The Reviews view includes open PRs where you are an assigned reviewer, including
 
 ## Local session hooks
 
-Open **Settings → Local sessions → Preview hook installation**. Installation merges DevFlow command hooks into `~/.claude/settings.json` and `~/.codex/hooks.json`, preserves other tools’ hooks and creates dated backups. It refuses installation if either configuration changed after preview.
+In **Settings → Local sessions**, choose your repository checkout, keep Project folder as `React.BFF`, and save. Leave **Include sessions at the repository root** on to include root-started chats too. Scope uses Git common-directory identity, including separate, nested and detached worktrees; unrelated repositories and sibling folders are excluded. Pick the AI agent you want to see.
+
+Then open **Preview hook installation**. Installation merges DevFlow command hooks into `~/.claude/settings.json` and `~/.codex/hooks.json`, preserves other tools’ hooks and creates dated backups. It refuses installation if either configuration changed after preview.
 
 Start a new Claude Code session after installation. **Review and trust the new hook definitions in Codex’s Hooks settings or `/hooks`** where supported by your client. DevFlow does not bypass that trust step. A client that does not run these hooks still appears through local transcript import, without guaranteed immediate live status or completion banners.
 
-The relay sends events through a private local Unix socket, times out after 150 ms and always leaves agent permissions to the originating client. It does not copy tool outputs. Recent history imports the 100 latest transcript files for each agent, with a 2 MiB tail limit per large transcript. It retains up to 200 sessions, 50 completed answers and 60 status steps per session, and 500 inbox entries. Missing or stale active-state evidence is shown as unknown; imported old answers do not create a flood of notifications.
+The relay sends events through a private local Unix socket, times out after 150 ms and always leaves agent permissions to the originating client. It forwards concise questions/approval descriptions but does not copy raw tool arguments, outputs or permission decisions. Recent history imports the 100 latest matching transcripts for each agent, examining at most 2,000 recent files per agent, with a 2 MiB tail limit per large transcript. It retains up to 200 sessions, 50 completed answers and 60 status steps per session, and 500 inbox entries. Missing or stale active-state evidence is shown as unknown; imported old answers do not create a flood of notifications.
+
+System banners additionally require macOS notification permission. Use **Enable macOS notifications** in Companion settings and allow DevFlow in macOS; the visible status reports whether permission is available. Notch previews and app-played sound work independently of system banner permission. A pinned or actively read notch queues new previews while keeping updates in the Inbox.
 
 ### Worktree and push milestones
 
@@ -50,10 +56,10 @@ The installed helper is an explicit workflow integration. Call it after your set
 
 ```sh
 python3 "$HOME/Library/Application Support/DevFlow/devflow-event.py" worktree-ready --path /path/to/worktree
-python3 "$HOME/Library/Application Support/DevFlow/devflow-event.py" branch-pushed --path /path/to/repo --remote origin
+python3 "$HOME/Library/Application Support/DevFlow/devflow-event.py" branch-pushed --path /path/to/repo --remote origin --agent codex
 ```
 
-The push helper verifies the remote branch matches local HEAD before announcing it. Arbitrary terminal pushes/worktree setup are not automatically inferred. The helper exits quietly when the companion is absent.
+Use `--agent codex` or `--agent claude` (the default) so the milestone follows that agent’s visibility preference. The push helper verifies the remote branch matches local HEAD before announcing it. Arbitrary terminal pushes/worktree setup are not automatically inferred. The helper exits quietly when the companion is absent.
 
 ## Local data and troubleshooting
 
@@ -69,7 +75,7 @@ To remove DevFlow hooks, quit the app and remove only commands referring to `App
 ./scripts/test.sh
 ```
 
-Tests cover concurrent sessions, answer persistence and replay, history import, hook merging/backups/stale previews, the real Unix relay and daemon, Azure parsing, build matching, independent refresh baselines, personal cross-project work-item scope, status/search combinations, cache migration, local-day pipeline filters (including DST), hover/close behavior and cache recovery. Native compilation uses Swift 6; interface checks include notch overview, Azure lists and session answers.
+Tests cover real linked/detached Git worktrees, project exclusion, per-agent visibility, contextual permission/input/completion notices, silent history, original chime bounds, concurrent sessions, answer persistence and replay, history import, hook merging/backups/stale previews, the real Unix relay and daemon, Azure parsing, build matching, independent refresh baselines, personal cross-project work-item scope, status/search combinations, cache migration, local-day pipeline filters (including DST), hover/close behavior and cache recovery. Native compilation uses Swift 6; interface checks include both/single-agent notch layouts, context-rich previews, Azure lists and session answers. Both real Codex and Claude Code CLI smoke runs were checked against the installed relay; pending-input payloads were also exercised through the installed relay without approving any agent action. On this development Mac, notch previews and sound were verified; optional system banner authorization remains to be enabled in macOS.
 
 ## Upstream and licensing
 

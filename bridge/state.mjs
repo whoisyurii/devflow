@@ -6,7 +6,8 @@ export const defaults = {
   organization: '', project: '', repository: '', myEmail: '', colleagueEmail: '',
   workItemProject: '', workItemTypes: '',
   authentication: 'interactive', tokenEnvironmentVariable: 'ADO_MCP_AUTH_TOKEN',
-  notifications: true, showNotch: true, importHistory: true,
+  sessionRepositoryPath: '', sessionSubdirectory: 'React.BFF', includeRepositoryRoot: true, agentProvider: 'both',
+  notificationSound: true, notifications: true, showNotch: true, importHistory: true,
 };
 export const blankState = () => ({
   sessions: [], activity: [], pullRequests: [], pipelines: [], workItems: [],
@@ -55,7 +56,12 @@ export class Store {
     this.state.connection = 'disconnected';
     this.state.sessions = this.state.sessions.map(s => ({ ...s, state: ['working', 'thinking', 'waiting'].includes(s.state) ? 'unknown' : s.state }));
   }
-  snapshot() { return { ...this.state, settings: this.settings }; }
+  snapshot() {
+    const selected = this.settings.agentProvider;
+    return { ...this.state, settings: this.settings,
+      sessions: this.state.sessions.filter(s => selected === 'both' || s.agent === selected),
+      activity: this.state.activity.filter(a => !a.sessionID || selected === 'both' || a.sessionID.startsWith(selected + ':')) };
+  }
   publish() {
     this.state.sessions.sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
     this.state.sessions = this.state.sessions.slice(0, 200);
@@ -73,13 +79,12 @@ export class Store {
   async saveSettings(settings) {
     this.settings = Object.fromEntries(Object.entries({ ...this.settings, ...settings }).filter(([key]) => key in defaults));
     await atomicJSON(join(this.directory, 'settings.json'), this.settings);
-    this.publish();
   }
-  notice(key, title, body, { url = '', sessionID = '', silent = false } = {}) {
+  notice(key, title, body, { url = '', sessionID = '', silent = false, context = {} } = {}) {
     if (this.state.activity.some(x => x.id === key)) return;
-    const entry = { id: key, title, body: text(body, 2000), date: now(), read: false, url, sessionID };
+    const entry = { id: key, title, body: text(body, 2000), date: now(), read: false, url, sessionID, ...context };
     this.state.activity.unshift(entry);
-    if (!silent && this.settings.notifications) this.onNotice(entry);
+    if (!silent && this.settings.notifications && (!context.agent || this.settings.agentProvider === 'both' || this.settings.agentProvider === context.agent)) this.onNotice(entry);
   }
   ingest(payload, { historical = false } = {}) {
     if (!payload || typeof payload !== 'object') return;
@@ -101,12 +106,24 @@ export class Store {
     }
     if (historical && session.source === 'hooks' && timestamp <= session.updatedAt) {
       // History can fill answers, but must not revert a newer live state.
-      if (name !== 'Stop') return;
+      if (!['Stop','SessionNamed'].includes(name)) return;
     }
     const isNewer = timestamp >= session.updatedAt;
     const cwd = text(payload.cwd, 4000);
-    if (cwd) { session.cwd = cwd; session.project = basename(cwd) || cwd; }
-    if (payload.branch) session.branch = text(payload.branch, 300);
+    if (isNewer || !session.cwd) {
+      if (cwd) { session.cwd = cwd; session.project = basename(cwd) || cwd; }
+      if (payload.branch) session.branch = text(payload.branch, 300);
+      for (const field of ['worktree','worktreePath','gitCommonDirectory']) if (payload[field]) session[field] = text(payload[field], 4000);
+    }
+    session.pending ||= '';
+    if (isNewer && payload.session_name) { session.title = text(payload.session_name, 200); session.named = true; }
+    const alert = (key, title, pending) => {
+      if (historical) return;
+      this.notice(key, title, pending, { sessionID: id, context: {
+        agent, sessionTitle: session.title || session.project, worktree: session.worktree || session.project,
+        branch: session.branch || 'Unknown branch', cwd: session.cwd, pending,
+      }});
+    };
     if (payload.transcript_path) session.transcriptPath = text(payload.transcript_path, 4000);
     if (!historical) session.source = 'hooks';
     const step = (label) => {
@@ -116,36 +133,56 @@ export class Store {
     const setState = value => { if (isNewer) session.state = value; };
     switch (name) {
       case 'SessionStart': setState('idle'); break;
+      case 'SessionNamed': if(payload.session_name) { session.title = text(payload.session_name, 200); session.named = true; } break;
       case 'UserPromptSubmit':
-        setState('thinking');
-        if (payload.prompt) { session.title = text(payload.prompt, 200); step(payload.prompt); }
+        setState('thinking'); session.pending = ''; session.pendingKey = '';
+        if (payload.prompt) { if (!session.title) session.title = text(payload.prompt, 200); step(payload.prompt); }
         break;
-      case 'PreToolUse': setState('working'); step(payload.tool_name || 'Working'); break;
-      case 'PostToolUse': setState('working'); break;
+      case 'PreToolUse':
+        if (/AskUserQuestion|request_user_input/i.test(payload.tool_name || '')) {
+          setState('waiting'); session.pending = text(payload.pending_summary || 'Answer the question in the agent', 500);
+          session.pendingKey = stableID(id, 'question', payload.tool_use_id || eventID);
+          alert(session.pendingKey, 'Input needed', session.pending);
+        } else { setState('working'); }
+        step(payload.tool_name || 'Working'); break;
+      case 'PostToolUse': setState('working'); session.pending = ''; session.pendingKey = ''; break;
       case 'PostToolUseFailure': setState('working'); step('Tool failed: ' + (payload.tool_name || 'tool')); break;
       case 'PermissionRequest':
-        setState('waiting'); step('Waiting for permission in ' + (agent === 'codex' ? 'Codex' : 'Claude Code'));
-        if (!historical) this.notice(stableID(id, 'permission', payload.tool_use_id || eventID), 'Permission needed', session.title || session.project, { sessionID: id });
+        setState('waiting');
+        session.pending = text(payload.pending_summary || ('Approve ' + (payload.tool_name || 'the requested action') + ' in ' + (agent === 'codex' ? 'Codex' : 'Claude Code')), 500);
+        step(session.pending);
+        session.pendingKey = stableID(id, 'permission', payload.tool_use_id || eventID);
+        alert(session.pendingKey, 'Permission needed', session.pending);
         break;
-      case 'Notification': setState('waiting'); step(payload.message || 'Input needed'); break;
+      case 'Notification': {
+        const type = payload.notification_type || '';
+        if (!['','permission_prompt','idle_prompt','elicitation_dialog','agent_needs_input'].includes(type)) return;
+        if (type === 'idle_prompt' && session.state === 'finished') return;
+        const pending = text(payload.message || 'Input needed in the agent', 500);
+        const key = type === 'permission_prompt' && session.pendingKey ? session.pendingKey : stableID(id, 'input', pending, session.updatedAt);
+        if (session.state === 'waiting' && session.pending === pending) return;
+        setState('waiting'); session.pending = pending; session.pendingKey = key; step(pending);
+        alert(key, type === 'permission_prompt' ? 'Permission needed' : 'Input needed', pending);
+        break;
+      }
       case 'Stop': {
-        setState('finished');
+        setState('finished'); if (isNewer) { session.pending = ''; session.pendingKey = ''; }
         const answer = text(payload.last_assistant_message || payload.message);
         const answerID = stableID(id, payload.turn_id || '', answer);
         if (answer && !session.answers.some(a => a.id === answerID || a.text === answer && a.date === timestamp)) {
           session.answers.push({ id: answerID, text: answer, date: timestamp });
           session.answers = session.answers.slice(-50);
         }
-        if (!historical) this.notice(answerID, 'Session finished', answer || session.title || session.project, { sessionID: id });
+        alert(answerID, 'Session finished', answer ? text(answer, 500) : 'Response ready — open the session to review.');
         break;
       }
-      case 'StopFailure': setState('error'); if (!historical) this.notice(stableID(id, eventID), 'Session failed', session.title || session.project, { sessionID: id }); break;
-      case 'Interrupt': setState('idle'); break;
-      case 'SessionEnd': setState('ended'); break;
+      case 'StopFailure': setState('error'); session.pending = text(payload.error || 'Agent failed; check the terminal.', 500); alert(stableID(id, eventID), 'Session failed', session.pending); break;
+      case 'Interrupt': setState('idle'); session.pending = ''; session.pendingKey = ''; break;
+      case 'SessionEnd': setState('ended'); session.pending = ''; session.pendingKey = ''; break;
       case 'SubagentStart': step('Subagent started'); break;
       case 'SubagentStop': step('Subagent finished'); break;
       case 'WorktreeReady': case 'BranchPushed':
-        this.notice(stableID(id, name, payload.commit || eventID), name === 'WorktreeReady' ? 'Worktree ready' : 'Branch pushed', [session.project, session.branch].filter(Boolean).join(' · '), { sessionID: id });
+        alert(stableID(id, name, payload.commit || eventID), name === 'WorktreeReady' ? 'Worktree ready' : 'Branch pushed', name === 'WorktreeReady' ? 'Ready to start work.' : 'Remote branch matches local HEAD.');
         break;
       default: return;
     }

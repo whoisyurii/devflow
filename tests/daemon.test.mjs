@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
@@ -37,9 +37,11 @@ function event(directory,payload) {
 test('real bridge handles Unix socket events, persists answers, and restores unread state',{timeout:15000},async()=>{
   const directory=await mkdtemp('/tmp/df-');let bridge;
   try{
+    execFileSync('/usr/bin/git',['init',directory]);
+    await writeFile(join(directory,'settings.json'),JSON.stringify({sessionRepositoryPath:directory,includeRepositoryRoot:true,importHistory:false}));
     bridge=await launch(directory);
     assert.equal((await stat(join(directory,'events.sock'))).mode & 0o777,0o600);
-    await event(directory,{agent:'codex',session_id:'abc',hook_event_name:'Stop',last_assistant_message:'Complete\nanswer',turn_id:'one'});
+    await event(directory,{agent:'codex',session_id:'abc',cwd:directory,hook_event_name:'Stop',last_assistant_message:'Complete\nanswer',turn_id:'one'});
     let state=await bridge.call('snapshot');assert.equal(state.sessions.length,1);assert.equal(state.activity.length,1);
     await bridge.call('markRead',{id:state.activity[0].id});
     await assert.rejects(bridge.call('executeShell',{command:'should never run'}),/Unknown/);

@@ -96,6 +96,14 @@ struct IslandHeader: View {
                 TabButton(icon: "tray.fill", isOn: state.section == .inbox && state.view == .detail, label: "Inbox") {
                     state.show(.inbox)
                 }
+                Menu {
+                    Button("Codex only") { BridgeModel.shared.selectAgent("codex") }
+                    Button("Claude Code only") { BridgeModel.shared.selectAgent("claude") }
+                    Button("Both agents") { BridgeModel.shared.selectAgent("both") }
+                } label: {
+                    Text(state.snapshot.settings.agentProvider == "both" ? "Agents" : state.snapshot.settings.agentProvider == "codex" ? "Codex" : "Claude Code")
+                        .font(.system(size: 10)).foregroundColor(Color(hex: "#8E939C"))
+                }.menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Choose visible AI agent")
             }.padding(.leading, 14)
             Spacer()
             HStack(spacing: 14) {

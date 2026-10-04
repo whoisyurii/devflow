@@ -19,7 +19,9 @@ final class AppState: ObservableObject {
     var hasNotch = true
 
     var tasks: [AgentTask] {
-        PillCatalog.all.map { original in
+        PillCatalog.all.filter { task in
+            !["codex", "claude"].contains(task.id) || snapshot.settings.agentProvider == "both" || task.id == snapshot.settings.agentProvider
+        }.map { original in
             var task = original
             switch task.id {
             case "claude", "codex":
@@ -41,6 +43,8 @@ final class AppState: ObservableObject {
             return task
         }
     }
+    var singleAgent: Bool { snapshot.settings.agentProvider != "both" }
+    var focusCardWidth: CGFloat { singleAgent ? 430 : 322 }
     var focusTask: AgentTask { tasks.first { $0.id == focusId } ?? tasks[0] }
     var selectedSession: SessionRecord? { snapshot.sessions.first { $0.id == sessionID } }
 

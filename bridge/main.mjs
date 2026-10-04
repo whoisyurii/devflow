@@ -7,6 +7,7 @@ import { Store } from './state.mjs';
 import { ADO, attachBuildChecks } from './ado.mjs';
 import { Hooks } from './hooks.mjs';
 import { History } from './history.mjs';
+import { SessionMonitor } from './session-scope.mjs';
 
 const argument = key => { const i=process.argv.indexOf(key); return i<0 ? null : process.argv[i+1]; };
 const directory = argument('--data-dir') || process.env.DEVFLOW_DATA_DIR || join(homedir(),'Library','Application Support','DevFlow');
@@ -14,7 +15,10 @@ const output = value => process.stdout.write(JSON.stringify(value)+'\n');
 const store = new Store(directory, data => output({type:'snapshot',data}), data => output({type:'notice',data}));
 await store.load();
 const hooks = new Hooks(directory);
-const history = new History(store);
+const monitor = new SessionMonitor(store);
+await monitor.reconcile();
+const history = new History(store, undefined, monitor);
+let eventQueue = Promise.resolve();
 const ado = new ADO();
 let timer, busy = false, connected = false, failures = 0, generation = 0;
 
@@ -58,7 +62,10 @@ const server=createServer(connection=>{
     if(Buffer.byteLength(buffer)>1024*1024) return connection.destroy();
     const i=buffer.indexOf('\n');
     if(i<0) return;
-    try {store.ingest(JSON.parse(buffer.slice(0,i)));} catch {}
+    try {
+      const payload = JSON.parse(buffer.slice(0,i));
+      eventQueue = eventQueue.then(() => monitor.ingest(payload)).catch(() => {});
+    } catch {}
     connection.end();
   });
 });
@@ -85,7 +92,7 @@ const historyTimer=setInterval(()=>history.importRecent().catch(()=>{}),60000);
 async function command(message) {
   const p=message.params||{};
   switch(message.method) {
-    case 'snapshot': return store.snapshot();
+    case 'snapshot': await eventQueue; return store.snapshot();
     case 'configure': {
       const previous=store.settings;
       const adoChanged=['organization','project','repository','myEmail','colleagueEmail','workItemProject','workItemTypes','authentication','tokenEnvironmentVariable'].some(k=>p[k]!==undefined&&previous[k]!==p[k]);
@@ -93,6 +100,9 @@ async function command(message) {
       await store.saveSettings(p);
       if(['organization','project','repository','myEmail','colleagueEmail','workItemProject','workItemTypes'].some(k=>previous[k]!==store.settings[k])) {
         store.state.pullRequests=[];store.state.pipelines=[];store.state.workItems=[];store.state.lastSync=null;store.state.baselines={};
+      }
+      if(['sessionRepositoryPath','sessionSubdirectory','includeRepositoryRoot'].some(k=>previous[k]!==store.settings[k])) {
+        await eventQueue; await monitor.reconcile(); history.seen.clear(); await history.importRecent();
       }
       if(adoChanged) store.state.connection='disconnected';
       store.publish();return true;
@@ -128,6 +138,6 @@ createInterface({input:process.stdin}).on('line',line=>{
 let closing=false;
 async function shutdown() {
   if(closing)return;closing=true;connected=false;clearTimeout(timer);clearInterval(historyTimer);
-  await ado.close();server.close();await store.flush().catch(()=>{});await unlink(socketPath).catch(()=>{});process.exit(0);
+  await ado.close();server.close();await eventQueue;await store.flush().catch(()=>{});await unlink(socketPath).catch(()=>{});process.exit(0);
 }
 process.on('SIGTERM',()=>shutdown());process.on('SIGINT',()=>shutdown());

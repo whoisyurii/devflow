@@ -11,6 +11,7 @@ final class IslandWindowController: NSWindowController {
     private var keyMonitor: Any?
     private var wasInIsland = false
     private var wasPinned = false
+    private var noticeQueue: [Activity] = []
 
     convenience init() {
         let screen = Self.notchScreen() ?? NSScreen.main!
@@ -58,6 +59,19 @@ final class IslandWindowController: NSWindowController {
 
     @objc private func update() {
         state.snapshot = BridgeModel.shared.snapshot
+        let visibleSessions = Set(state.snapshot.sessions.map(\.id))
+        if let notice = state.latestNotice, !notice.sessionID.isEmpty, !visibleSessions.contains(notice.sessionID) {
+            state.latestNotice = nil
+        }
+        noticeQueue.removeAll { !$0.sessionID.isEmpty && !visibleSessions.contains($0.sessionID) }
+        if !state.tasks.contains(where: { $0.id == state.focusId }) {
+            state.setFocus(state.snapshot.settings.agentProvider == "claude" ? "claude" : "codex")
+        }
+        if [.claude, .codex].contains(state.section), state.singleAgent,
+           state.section.rawValue != state.snapshot.settings.agentProvider {
+            state.section = state.snapshot.settings.agentProvider == "claude" ? .claude : .codex
+        }
+        if state.view == .answer, state.selectedSession == nil { state.show(state.section) }
         guard state.snapshot.settings.showNotch else { window?.orderOut(nil); return }
         guard let screen = Self.notchScreen() ?? NSScreen.main else { return }
         let geometry = IslandScreenGeometry(screenWidth: screen.frame.width, safeAreaTop: screen.safeAreaInsets.top,
@@ -79,6 +93,9 @@ final class IslandWindowController: NSWindowController {
         if !inside && (wasInIsland || wasPinned && !state.isPinned) { fsm.mouseLeft() }
         wasInIsland = inside
         wasPinned = state.isPinned
+        if !inside && !state.isPinned && state.mode != .expanded && !noticeQueue.isEmpty {
+            presentNotice(noticeQueue.removeFirst())
+        }
     }
     @objc func expand() {
         state.mode = .expanded; fsm.openedExternally(); state.lastActivity = .now
@@ -87,13 +104,19 @@ final class IslandWindowController: NSWindowController {
         if !wasInIsland { fsm.mouseLeft(after: 4) }
     }
     @objc func collapse() {
+        noticeQueue.removeAll()
         state.isPinned = false; state.latestNotice = nil
         fsm.collapse(); state.mode = .compact; window?.resignKey()
     }
     @objc private func announce(_ note: Notification) {
         guard let entry = note.object as? Activity else { return }
         // Do not interrupt someone reading a session or detail list.
-        guard !state.isPinned, !(state.mode == .expanded && wasInIsland) else { return }
+        guard !state.isPinned, !(state.mode == .expanded && wasInIsland) else {
+            noticeQueue.append(entry); noticeQueue = Array(noticeQueue.suffix(10)); return
+        }
+        presentNotice(entry)
+    }
+    private func presentNotice(_ entry: Activity) {
         state.latestNotice = entry; state.view = .overview; expand()
     }
     static func notchScreen() -> NSScreen? { NSScreen.screens.first { $0.safeAreaInsets.top > 0 } }

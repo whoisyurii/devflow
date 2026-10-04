@@ -18,16 +18,18 @@ async function collect(directory, depth = 0) {
 }
 export function historyEvents(lines, agent, path) {
   if (agent === 'codex' && auxiliaryCodexSession(lines)) return [];
-  const events = []; let id = ''; let cwd = ''; let branch = ''; let turn = '';
+  const events = []; let id = ''; let cwd = ''; let branch = ''; let turn = ''; let lastTimestamp;
   const emit = (event, timestamp, extra = {}) => {
     if (id) events.push({ agent, session_id: id, cwd, branch, timestamp, transcript_path: path,
-      turn_id: turn, hook_event_name: event, event_id: stableID(path, timestamp || '', event, extra.last_assistant_message || extra.prompt || ''), ...extra });
+      turn_id: turn, hook_event_name: event, event_id: stableID(path, timestamp || '', event, extra.last_assistant_message || extra.prompt || extra.session_name || ''), ...extra });
   };
   for (const line of lines) {
     let r; try { r = JSON.parse(line); } catch { continue; }
+    if (r.timestamp) lastTimestamp = r.timestamp;
     if (agent === 'codex') {
       const p = r.payload || {};
       if (r.type === 'session_meta') { id = p.id || p.session_id; cwd = p.cwd || ''; branch = p.git?.branch || ''; emit('SessionStart', r.timestamp); }
+      if (r.type === 'event_msg' && p.type === 'thread_name_updated') emit('SessionNamed', r.timestamp, { session_name: p.thread_name || p.name || '' });
       if (r.type === 'turn_context') { turn = p.turn_id || turn; cwd = p.cwd || cwd; }
       if (r.type === 'event_msg' && p.type === 'task_started') { turn = p.turn_id || turn; emit('PreToolUse', r.timestamp, { tool_name: 'Session active' }); }
       if (r.type === 'event_msg' && p.type === 'user_message') emit('UserPromptSubmit', r.timestamp, { prompt: p.message || '' });
@@ -44,6 +46,7 @@ export function historyEvents(lines, agent, path) {
     } else {
       if (r.isSidechain) continue;
       id = r.sessionId || r.session_id || id; cwd = r.cwd || cwd; branch = r.gitBranch || branch;
+      if (r.type === 'custom-title') emit('SessionNamed', r.timestamp || lastTimestamp, { session_name: r.customTitle || '' });
       if (r.type === 'user' && !r.isMeta && typeof r.message?.content === 'string') emit('UserPromptSubmit', r.timestamp, { prompt: r.message.content });
       if (r.type === 'assistant' && r.message?.stop_reason === 'end_turn') {
         turn = r.message.id || r.uuid || '';
@@ -61,27 +64,35 @@ function auxiliaryCodexSession(lines) {
   return false;
 }
 export class History {
-  constructor(store, home = homedir()) { this.store = store; this.home = home; this.seen = new Map(); }
+  constructor(store, home = homedir(), monitor = null) { this.store = store; this.home = home; this.monitor = monitor; this.seen = new Map(); }
   async importRecent() {
     if (!this.store.settings.importHistory || this.running) return;
     this.running = true;
     try {
       for (const [agent, directory] of [['codex',join(this.home,'.codex','sessions')],['claude',join(this.home,'.claude','projects')]]) {
-        const files = (await collect(directory)).sort((a,b) => b.modified-a.modified).slice(0,100);
+        const files = (await collect(directory)).sort((a,b) => b.modified-a.modified).slice(0,2000);
+        let admitted = 0;
         for (const file of files) {
-          if (this.seen.get(file.path) === file.modified) continue;
-          this.seen.set(file.path,file.modified);
+          if (admitted >= 100) break;
+          const seen = this.seen.get(file.path);
+          if (seen?.modified === file.modified) { if(seen.admitted) admitted++; continue; }
+          this.seen.set(file.path,{modified:file.modified, admitted:false});
           let handle;
           try {
             handle = await open(file.path, 'r');
+            const head = Buffer.alloc(Math.min(65536,file.size)); await handle.read(head,0,head.length,0);
+            const headLines = head.toString('utf8').split('\n');
+            if (file.size > head.length) headLines.pop();
+            const first = historyEvents(headLines,agent,file.path).find(e => e.cwd);
+            if (this.monitor && (!first || !await this.monitor.scope.match(first.cwd))) continue;
+            admitted++; this.seen.set(file.path,{modified:file.modified, admitted:true});
             // Bounded I/O: session metadata plus the most recent 2 MiB of very large transcripts.
             const bytes = Math.min(file.size, 2 * 1024 * 1024);
             const tail = Buffer.alloc(bytes); await handle.read(tail,0,bytes,file.size-bytes);
             let lines = tail.toString('utf8').split('\n');
             if (file.size > bytes) {
               lines.shift();
-              const head = Buffer.alloc(Math.min(65536,file.size)); await handle.read(head,0,head.length,0);
-              lines = [...head.toString('utf8').split('\n').slice(0,-1),...lines];
+              lines = [...headLines,...lines];
             }
             if(agent==='codex' && auxiliaryCodexSession(lines)) {
               // Internal reviewer/subagent transcripts are not user chats. Remove
@@ -89,7 +100,10 @@ export class History {
               this.store.state.sessions=this.store.state.sessions.filter(s=>s.source!=='history'||s.transcriptPath!==file.path);
               continue;
             }
-            for (const event of historyEvents(lines,agent,file.path)) this.store.ingest(event,{historical:true});
+            for (const event of historyEvents(lines,agent,file.path)) {
+              if (this.monitor) await this.monitor.ingest(event,{historical:true});
+              else this.store.ingest(event,{historical:true});
+            }
           } catch {} finally { await handle?.close(); }
         }
       }

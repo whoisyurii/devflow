@@ -10,6 +10,9 @@ final class BridgeModel {
     var error = ""
     var ready = false
     var hookPreview = ""
+    var notificationStatus = ""
+    @ObservationIgnored private var chime: NSSound?
+    @ObservationIgnored private var lastChime = Date.distantPast
     @ObservationIgnored private var process: Process?
     @ObservationIgnored private var input: FileHandle?
     @ObservationIgnored private var buffer = Data()
@@ -130,19 +133,59 @@ final class BridgeModel {
     func openWeb(_ string: String) {
         if let url = safeWebURL(string) { NSWorkspace.shared.open(url) }
     }
+    func selectAgent(_ agent: String) {
+        guard ["codex", "claude", "both"].contains(agent) else { return }
+        if agent != "both" { AppState.shared.setFocus(agent) }
+        perform("configure", params: ["agentProvider": agent])
+    }
+    func checkNotifications() {
+        Task {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            notificationStatus = settings.authorizationStatus == .authorized ? "System banners enabled."
+                : settings.authorizationStatus == .denied ? "System banners are disabled in macOS Settings. Notch previews and the chime still work."
+                : "Enable macOS notifications for system banners."
+        }
+    }
+    func playChime(preview: Bool = false) {
+        guard preview || snapshot.settings.notificationSound else { return }
+        guard preview || Date.now.timeIntervalSince(lastChime) > 0.8 else { return }
+        guard let url = Bundle.main.url(forResource: "DevFlowChime", withExtension: "wav") else {
+            error = "The notification sound is missing. Rebuild DevFlow."; return
+        }
+        chime?.stop()
+        chime = NSSound(contentsOf: url, byReference: true)
+        chime?.volume = 0.5
+        if chime?.play() != true { error = "Could not play the notification sound." }
+        lastChime = .now
+    }
+    func previewNotification(agent: String) {
+        let entry = Activity(id: UUID().uuidString, title: "Input needed", body: "Choose how to continue in the terminal.",
+                             date: ISO8601DateFormatter().string(from: .now), read: false, url: "", sessionID: "",
+                             agent: agent, sessionTitle: "Notification preview", worktree: "feature-worktree",
+                             branch: "feature/example", cwd: snapshot.settings.sessionRepositoryPath,
+                             pending: "Choose how to continue in the terminal.")
+        notify(entry)
+    }
     func requestNotifications() {
         Task {
-            do { _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) }
+            do { _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]); checkNotifications() }
             catch { self.error = error.localizedDescription }
         }
     }
     private func notify(_ entry: Activity) {
         NotificationCenter.default.post(name: .devflowNotice, object: entry)
+        playChime()
         let content = UNMutableNotificationContent()
-        content.title = entry.title; content.body = String(entry.body.prefix(200))
+        content.title = entry.agent == nil ? entry.title : "\(entry.agentName) · \(entry.title)"
+        if let worktree = entry.worktree { content.subtitle = "\(worktree) · \(entry.branch ?? "Unknown branch")" }
+        content.body = [entry.sessionTitle, entry.pending ?? entry.body].compactMap { $0 }.joined(separator: "\n")
+        // The app plays one chime for both notch and banner; avoid a duplicate system sound.
         content.userInfo = ["activityID": entry.id]
         let request = UNNotificationRequest(identifier: entry.id, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in }
+        Task {
+            do { try await UNUserNotificationCenter.current().add(request) }
+            catch { notificationStatus = "System banner unavailable: " + error.localizedDescription }
+        }
     }
     func savePAT(_ secret: String, organization: String) throws {
         guard !secret.isEmpty, !organization.isEmpty else { throw BridgeError.message("Enter an organization and PAT first.") }

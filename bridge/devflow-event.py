@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('event', choices=['worktree-ready','branch-pushed'])
 parser.add_argument('--path', default=os.getcwd())
 parser.add_argument('--remote', default='origin')
+parser.add_argument('--agent', choices=['codex','claude'], default='claude')
 args = parser.parse_args()
 
 
@@ -30,7 +31,7 @@ try:
     spec = importlib.util.spec_from_file_location('devflow_hook', os.path.join(os.path.dirname(__file__),'devflow-hook.py'))
     relay = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(relay)
-    relay.send({'agent':'claude','session_id':'workflow:'+path,'cwd':path,'branch':branch,'commit':commit,
+    relay.send({'agent':args.agent,'session_id':'workflow:'+path,'cwd':path,'branch':branch,'commit':commit,
                 'hook_event_name':'WorktreeReady' if args.event=='worktree-ready' else 'BranchPushed'})
 except (FileNotFoundError, ConnectionRefusedError):
     pass  # Companion is not running; never make a successful workflow fail.

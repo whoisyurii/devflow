@@ -4,24 +4,44 @@ import SwiftUI
 struct OverviewView: View {
     @ObservedObject var state: AppState
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack(alignment: .topLeading) {
-                CardBackground(wash: state.latestNotice == nil ? nil : .green)
-                PillSymbol(task: state.focusTask)
-                    .frame(width: 58, height: 58).position(x: 58, y: 49)
-                if let notice = state.latestNotice {
-                    Button { state.showActivity(notice) } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(notice.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                            Text(notice.body).font(.system(size: 11)).foregroundColor(Color(hex: "#9398A1")).lineLimit(3)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.leading, 108).padding(.trailing, 12).padding(.top, 12)
-                    }.buttonStyle(.plain)
-                } else {
+        if let notice = state.latestNotice {
+            NotificationPreviewCard(notice: notice) { state.showActivity(notice) }
+        } else {
+            HStack(spacing: 10) {
+                ZStack(alignment: .topLeading) {
+                    CardBackground(wash: nil)
+                    PillSymbol(task: state.focusTask)
+                        .frame(width: 58, height: 58).position(x: 58, y: 49)
                     IntegrationCardView(state: state)
-                }
-            }.frame(width: 322)
-            CardBackground(wash: nil) { AgentPillsView(state: state) }
+                }.frame(width: state.focusCardWidth)
+                CardBackground(wash: nil) { AgentPillsView(state: state) }
+            }
+        }
+    }
+}
+
+struct NotificationPreviewCard: View {
+    let notice: Activity
+    let action: () -> Void
+    var body: some View {
+        CardBackground(wash: notice.title == "Session finished" ? .green : .amber) {
+            Button(action: action) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: notice.title == "Session finished" ? "checkmark.circle" : "bell.badge")
+                        .font(.system(size: 26)).foregroundColor(Color(hex: "#A78BFA")).frame(width: 38)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(notice.agentName) · \(notice.title)").font(.system(size: 11, weight: .semibold))
+                        if let name = notice.sessionTitle { Text(name).font(.system(size: 12, weight: .medium)).lineLimit(1) }
+                        if let worktree = notice.worktree {
+                            Text("Worktree: \(worktree) · \(notice.branch ?? "Unknown branch")")
+                                .font(.system(size: 10)).foregroundColor(Color(hex: "#A7ADB8")).lineLimit(1).help(notice.cwd ?? worktree)
+                        }
+                        Text(notice.pending ?? notice.body).font(.system(size: 11)).lineLimit(2)
+                            .foregroundColor(Color(hex: "#D0D4DC"))
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "arrow.up.right").font(.system(size: 10)).foregroundStyle(.secondary)
+                }.padding(12).contentShape(Rectangle())
+            }.buttonStyle(.plain)
         }
     }
 }
@@ -69,7 +89,7 @@ struct IntegrationCardView: View {
                             TickerView(task: task).id(sessions.first { $0.active }?.id ?? sessions.first?.id)
                                 .frame(height: 44).offset(x: 6, y: -2)
                         } else {
-                            Text(sessions.first?.displayTitle ?? "Ready for local sessions")
+                            Text(sessions.first?.displayTitle ?? "No sessions in the selected repository yet")
                                 .font(.system(size: 11)).foregroundColor(Color(hex: "#9398A1")).lineLimit(2)
                         }
                     }
@@ -127,7 +147,7 @@ struct WorkflowDetailView: View {
     private var azureSection: Bool { [.myPRs, .toReview, .colleague, .allPRs, .pipelines].contains(state.section) }
     private var workSection: Bool { [.mine, .today].contains(state.section) }
     private var filters: [DetailSection] {
-        if sessionSection { return [.claude, .codex] }
+        if sessionSection { return state.singleAgent ? [state.snapshot.settings.agentProvider == "claude" ? .claude : .codex] : [.claude, .codex] }
         if azureSection { return [.myPRs, .toReview, .colleague, .allPRs, .pipelines] }
         if workSection { return [.mine, .today] }
         return []
@@ -221,7 +241,7 @@ struct WorkflowDetailView: View {
                 if azureSection || workSection {
                     connectionFooter
                 } else if sessionSection {
-                    Text("Local sessions · hooks provide live status · history imports recent answers")
+                    Text("Selected repository + worktrees · \(state.snapshot.settings.sessionSubdirectory) · live hooks")
                         .font(.system(size: 9)).foregroundColor(Color(hex: "#6B7079"))
                 }
             }.padding(14)
@@ -231,7 +251,7 @@ struct WorkflowDetailView: View {
     @ViewBuilder private var rows: some View {
         if sessionSection {
             let sessions = state.snapshot.sessions.filter {
-                $0.agent == state.section.rawValue && (search.isEmpty || ($0.displayTitle + $0.cwd).localizedCaseInsensitiveContains(search))
+                $0.agent == state.section.rawValue && (search.isEmpty || ($0.displayTitle + $0.cwd + $0.branch + ($0.worktree ?? "")).localizedCaseInsensitiveContains(search))
             }
             if sessions.isEmpty { empty("No local sessions found.") }
             ForEach(sessions) { session in
@@ -240,8 +260,11 @@ struct WorkflowDetailView: View {
                         Circle().fill(statusColor(session.state)).frame(width: 5, height: 5).padding(.top, 5)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(session.displayTitle).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                            Text("\(session.project) · \(session.state) · \(session.answers.count) answers")
-                                .font(.system(size: 10)).foregroundColor(Color(hex: "#8E939C"))
+                            Text("\(session.worktree ?? session.project) · \(session.branch.isEmpty ? "Unknown branch" : session.branch) · \(session.state)")
+                                .font(.system(size: 10)).foregroundColor(Color(hex: "#8E939C")).lineLimit(1)
+                            if let pending = session.pending, !pending.isEmpty {
+                                Text(pending).font(.system(size: 10)).foregroundColor(Color(hex: "#F5A524")).lineLimit(1)
+                            }
                         }
                         Spacer()
                         Text(displayDate(session.updatedAt)).font(.system(size: 9)).foregroundColor(Color(hex: "#6B7079"))
@@ -300,6 +323,10 @@ struct WorkflowDetailView: View {
                         Circle().fill(entry.read ? Color.clear : Color(hex: "#F5A524")).frame(width: 5, height: 5).padding(.top, 4)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(entry.title).font(.system(size: 12, weight: .medium))
+                            if let worktree = entry.worktree {
+                                Text("\(entry.agentName) · \(worktree) · \(entry.branch ?? "") · \(entry.sessionTitle ?? "")")
+                                    .font(.system(size: 10)).foregroundColor(Color(hex: "#A7ADB8")).lineLimit(1)
+                            }
                             Text(entry.body).font(.system(size: 10)).foregroundColor(Color(hex: "#9398A1")).lineLimit(2)
                         }
                         Spacer()

@@ -13,10 +13,7 @@ struct AgentPillsView: View {
         Array(others.prefix(4))
     }
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4)
-    ]
+    private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: 4), count: state.singleAgent ? 1 : 2) }
 
     var body: some View {
         VStack(spacing: 0) {

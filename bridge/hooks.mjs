@@ -13,7 +13,7 @@ export function mergeHooks(original, agent, executable) {
   if (!root || typeof root !== 'object' || Array.isArray(root)) throw new Error('Hook settings must be a JSON object.');
   if (root.hooks !== undefined && (!root.hooks || typeof root.hooks !== 'object' || Array.isArray(root.hooks))) throw new Error('Existing hooks have an unsupported shape.');
   root.hooks ||= {};
-  for (const event of [...events, ...(agent === 'codex' ? ['Interrupt'] : ['PostToolUseFailure','Notification'])]) {
+  for (const event of [...events, ...(agent === 'codex' ? ['Interrupt'] : ['PostToolUseFailure','Notification','StopFailure'])]) {
     const groups = root.hooks[event] || [];
     if (!Array.isArray(groups)) throw new Error('Existing hook groups have an unsupported shape.');
     // Keep every hook owned by another tool, including upstream Coucou.
