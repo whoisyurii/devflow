@@ -4,7 +4,7 @@ import { Store } from '../bridge/state.mjs';
 
 function fixture(t) {
   const notices = []; const store = new Store('/unused',()=>{},n=>notices.push(n));
-  t.after(()=>clearTimeout(store.saveTimer));
+  t.after(()=>{clearTimeout(store.saveTimer);clearTimeout(store.publishTimer);});
   const emit = (name,extra={}) => store.ingest({agent:'claude',session_id:'one',cwd:'/repo/React.BFF',branch:'feature',worktree:'tree',hook_event_name:name,...extra});
   return {store,notices,emit};
 }

@@ -21,18 +21,19 @@ function promptTitle(value) {
   return /^# AGENTS\.md|^<(?:skill|in-app-browser-context|realtime_delegation|environment_context|permissions|app-context|turn_aborted|send_user_message_question_reply)\b/.test(prompt) ? '' : text(prompt, 200);
 }
 
-export async function atomicJSON(path, data) {
+async function atomicText(path, serialized) {
   const temporary = path + '.' + process.pid + '.tmp';
-  await writeFile(temporary, JSON.stringify(data), { mode: 0o600 });
+  await writeFile(temporary, serialized, { mode: 0o600 });
   await rename(temporary, path);
   await chmod(path, 0o600);
 }
+export async function atomicJSON(path, data) { return atomicText(path, JSON.stringify(data)); }
 
 export class Store {
   constructor(directory, onChange = () => {}, onNotice = () => {}) {
     this.directory = directory; this.onChange = onChange; this.onNotice = onNotice;
     this.state = blankState(); this.settings = { ...defaults }; this.writeQueue = Promise.resolve();
-    this.recentEvents = new Set();
+    this.recentEvents = new Set(); this.revision = 0; this.publishTimer = null;
   }
   async load() {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
@@ -71,14 +72,24 @@ export class Store {
     this.state.sessions.sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
     this.state.sessions = this.state.sessions.slice(0, 200);
     this.state.activity = this.state.activity.slice(0, 500);
-    this.onChange(this.snapshot());
+    // A burst of tool hooks changes state immediately, but sends one complete
+    // snapshot per window. Do not restart this timer: sustained activity must
+    // still reach the UI. Notices use their own immediate channel.
+    if (this.publishTimer === null) this.publishTimer = setTimeout(() => this.publishNow(), 75);
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.flush().catch(() => {}), 300);
   }
+  publishNow() {
+    clearTimeout(this.publishTimer); this.publishTimer = null;
+    this.onChange(this.snapshot());
+  }
   async flush() {
     clearTimeout(this.saveTimer);
-    const snapshot = JSON.parse(JSON.stringify(this.state));
-    this.writeQueue = this.writeQueue.catch(() => {}).then(() => atomicJSON(join(this.directory, 'state.json'), snapshot));
+    if (this.publishTimer !== null) this.publishNow();
+    // Capture once before the asynchronous write queue, so later mutations
+    // cannot change this write and no parse/stringify clone is necessary.
+    const serialized = JSON.stringify(this.state);
+    this.writeQueue = this.writeQueue.catch(() => {}).then(() => atomicText(join(this.directory, 'state.json'), serialized));
     return this.writeQueue;
   }
   async saveSettings(settings) {
@@ -111,7 +122,10 @@ export class Store {
     }
     if (historical && session.source === 'hooks' && timestamp <= session.updatedAt) {
       // History can fill answers, but must not revert a newer live state.
-      if (name === 'UserPromptSubmit' && !promptTitle(session.title)) session.title = promptTitle(payload.prompt);
+      if (name === 'UserPromptSubmit' && !promptTitle(session.title)) {
+        const title = promptTitle(payload.prompt);
+        if (title && session.title !== title) { session.title = title; this.revision++; }
+      }
       if (!['Stop','SessionNamed'].includes(name)) return;
     }
     if (!session.named && !promptTitle(session.title)) session.title = '';
@@ -194,6 +208,7 @@ export class Store {
       default: return;
     }
     if (isNewer) session.updatedAt = timestamp;
+    this.revision++;
     if (!historical) this.publish();
   }
   updateADO(kind, items) {

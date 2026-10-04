@@ -68,6 +68,8 @@ export class History {
   async importRecent() {
     if (!this.store.settings.importHistory || this.running) return;
     this.running = true;
+    const revision = this.store.revision;
+    let changed = false;
     try {
       for (const [agent, directory] of [['codex',join(this.home,'.codex','sessions')],['claude',join(this.home,'.claude','projects')]]) {
         const files = (await collect(directory)).sort((a,b) => b.modified-a.modified).slice(0,2000);
@@ -97,7 +99,9 @@ export class History {
             if(agent==='codex' && auxiliaryCodexSession(lines)) {
               // Internal reviewer/subagent transcripts are not user chats. Remove
               // any old imported cache entry as well; never alter source transcripts.
+              const prior = this.store.state.sessions.length;
               this.store.state.sessions=this.store.state.sessions.filter(s=>s.source!=='history'||s.transcriptPath!==file.path);
+              changed ||= prior !== this.store.state.sessions.length;
               continue;
             }
             for (const event of historyEvents(lines,agent,file.path)) {
@@ -109,10 +113,11 @@ export class History {
       }
       // A stale transcript cannot prove a process is still running.
       for (const session of this.store.state.sessions) {
-        if (session.source === 'history' && ['working','thinking'].includes(session.state) && Date.now()-Date.parse(session.updatedAt)>180000)
-          session.state = 'unknown';
+        if (session.source === 'history' && ['working','thinking'].includes(session.state) && Date.now()-Date.parse(session.updatedAt)>180000) {
+          session.state = 'unknown'; changed = true;
+        }
       }
-      this.store.publish();
+      if (changed || this.store.revision !== revision) this.store.publish();
     } finally { this.running = false; }
   }
 }
