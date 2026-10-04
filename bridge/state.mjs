@@ -58,7 +58,8 @@ export class Store {
     }
     this.settings = Object.fromEntries(Object.entries(this.settings).filter(([key]) => key in defaults));
     this.state.connection = 'disconnected';
-    this.state.sessions = this.state.sessions.map(s => ({ ...s, state: ['working', 'thinking', 'waiting'].includes(s.state) ? 'unknown' : s.state }));
+    this.state.sessions = this.state.sessions.map(s => ({ ...s, title: promptTitle(s.title),
+      state: ['working', 'thinking', 'waiting'].includes(s.state) ? 'unknown' : s.state }));
   }
   snapshot() {
     const selected = this.settings.agentProvider;
@@ -122,7 +123,7 @@ export class Store {
       for (const field of ['worktree','worktreePath','gitCommonDirectory']) if (payload[field]) session[field] = text(payload[field], 4000);
     }
     session.pending ||= '';
-    if (isNewer && payload.session_name) { session.title = text(payload.session_name, 200); session.named = true; }
+    if (isNewer && promptTitle(payload.session_name)) { session.title = promptTitle(payload.session_name); session.named = true; }
     const alert = (key, title, pending) => {
       if (historical) return;
       this.notice(key, title, pending, { sessionID: id, context: {
@@ -139,7 +140,7 @@ export class Store {
     const setState = value => { if (isNewer) session.state = value; };
     switch (name) {
       case 'SessionStart': setState('idle'); break;
-      case 'SessionNamed': if(payload.session_name) { session.title = text(payload.session_name, 200); session.named = true; } break;
+      case 'SessionNamed': if(promptTitle(payload.session_name)) { session.title = promptTitle(payload.session_name); session.named = true; } break;
       case 'UserPromptSubmit':
         setState('thinking'); session.pending = ''; session.pendingKey = '';
         if (payload.prompt) { if (!session.title) session.title = promptTitle(payload.prompt); step(payload.prompt); }
