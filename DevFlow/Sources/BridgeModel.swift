@@ -64,7 +64,12 @@ final class BridgeModel {
         do { try child.run(); process = child }
         catch { self.error = "Could not start the local bridge: \(error.localizedDescription)" }
     }
-    func stop() { input?.closeFile(); input = nil }
+    func stop() {
+        input?.closeFile(); input = nil
+        // EOF may arrive before a stalled startup has installed its reader.
+        // SIGTERM also reaches the bridge's graceful shutdown handler.
+        if let process, process.isRunning { process.terminate() }
+    }
     private func receive(_ data: Data) {
         buffer.append(data)
         while let newline = buffer.firstIndex(of: 10) {
