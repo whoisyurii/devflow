@@ -30,7 +30,10 @@ final class DevFlowDelegate: NSObject, NSApplicationDelegate, UNUserNotification
         BridgeModel.shared.start()
         notch = IslandWindowController()
     }
-    func applicationWillTerminate(_ notification: Notification) { BridgeModel.shared.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        notch?.stopMonitoring()
+        BridgeModel.shared.stop()
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let id = response.notification.request.identifier
