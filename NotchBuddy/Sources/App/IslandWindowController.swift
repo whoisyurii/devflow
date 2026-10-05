@@ -57,6 +57,7 @@ final class IslandWindowController: NSWindowController {
         NotificationCenter.default.addObserver(self, selector: #selector(expand), name: .devflowOpenIsland, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(collapse), name: .islandCollapse, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(announce(_:)), name: .devflowNotice, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(dismissNotice(_:)), name: .devflowDismissNotice, object: nil)
         updateScreenGeometry()
         update()
     }
@@ -133,6 +134,14 @@ final class IslandWindowController: NSWindowController {
         }
         presentNotice(entry)
     }
+    @objc private func dismissNotice(_ note: Notification) {
+        guard let id = note.object as? String else { return }
+        noticeQueue.removeAll { $0.id == id }
+        guard state.latestNotice?.id == id else { return }
+        state.latestNotice = nil
+        // Keep the current pin and expansion state. Clearing the preview
+        // reveals the normal overview without discarding unrelated alerts.
+    }
     private func presentNotice(_ entry: Activity) {
         state.latestNotice = entry; state.view = .overview; expand()
     }
@@ -152,4 +161,5 @@ final class IslandPanel: NSPanel {
 extension Notification.Name {
     static let islandCollapse = Notification.Name("devflow.collapse")
     static let devflowNotice = Notification.Name("devflow.notice")
+    static let devflowDismissNotice = Notification.Name("devflow.dismissNotice")
 }

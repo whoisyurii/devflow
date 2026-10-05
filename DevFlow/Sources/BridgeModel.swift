@@ -150,6 +150,14 @@ final class BridgeModel {
             openIsland()
         } else { openWeb(activity.url) }
     }
+    func dismissNotice(_ activity: Activity) {
+        // Dismiss the presentation only. The Inbox and future session alerts
+        // keep their existing behavior, including the unread state.
+        NotificationCenter.default.post(name: .devflowDismissNotice, object: activity.id)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [activity.id])
+        center.removeDeliveredNotifications(withIdentifiers: [activity.id])
+    }
     func openWeb(_ string: String) {
         if let url = safeWebURL(string) { NSWorkspace.shared.open(url) }
     }
