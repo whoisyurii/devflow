@@ -9,6 +9,8 @@ final class IslandWindowController: NSWindowController {
     let fsm = IslandStateMachine()
     private var pointerTimer: Timer?
     private var keyMonitor: Any?
+    private var globalMouseMonitor: Any?
+    private var trackingMenus: Set<ObjectIdentifier> = []
     private var wasInIsland = false
     private var wasPinned = false
     private var noticeQueue: [Activity] = []
@@ -28,7 +30,10 @@ final class IslandWindowController: NSWindowController {
         host.frame = NSRect(origin: .zero, size: panel.frame.size)
         host.autoresizingMask = [.width, .height]
         panel.contentView = host
-        fsm.isHeldOpen = { AppState.shared.isPinned }
+        fsm.isHeldOpen = { [weak self] in
+            guard let self else { return false }
+            return self.state.isPinned || !self.trackingMenus.isEmpty
+        }
         fsm.onTransition = { [weak self] _, to in
             guard let self else { return }
             // Stay available in the notch even when idle, as requested.
@@ -44,13 +49,30 @@ final class IslandWindowController: NSWindowController {
             MainActor.assumeIsolated { self?.pollPointer() }
         }
         RunLoop.main.add(pointerTimer!, forMode: .common)
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] event in
+        let mouseDown: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseDown.union(.keyDown)) { [weak self] event in
             guard let self else { return event }
-            if event.type == .keyDown && event.keyCode == 53 { self.collapse(); return nil }
-            if event.type == .leftMouseDown && event.window == self.window && self.state.mode != .expanded {
+            // Menus own Escape and their item clicks until tracking ends.
+            guard self.trackingMenus.isEmpty else { return event }
+            if event.type == .keyDown {
+                if event.keyCode == 53 && event.window == self.window && self.state.mode == .expanded {
+                    self.collapse(); return nil
+                }
+                return event
+            }
+            if self.state.mode == .expanded {
+                self.dismissForOutsideClick(at: NSEvent.mouseLocation, anotherWindow: event.window != self.window)
+            } else if event.type == .leftMouseDown && event.window == self.window,
+                      self.islandFrameInScreen()?.contains(NSEvent.mouseLocation) == true {
                 self.expand(); return nil
             }
+            // Dismissing the notch must not consume the destination app's click.
             return event
+        }
+        // A local monitor cannot see clicks delivered to another application.
+        // Global mouse events do not require Accessibility access.
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseDown) { [weak self] _ in
+            self?.dismissForOutsideClick(at: NSEvent.mouseLocation)
         }
         NotificationCenter.default.addObserver(self, selector: #selector(update), name: .devflowStateChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(updateScreenGeometry), name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -58,8 +80,20 @@ final class IslandWindowController: NSWindowController {
         NotificationCenter.default.addObserver(self, selector: #selector(collapse), name: .islandCollapse, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(announce(_:)), name: .devflowNotice, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(dismissNotice(_:)), name: .devflowDismissNotice, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(menuDidBeginTracking(_:)), name: NSMenu.didBeginTrackingNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(menuDidEndTracking(_:)), name: NSMenu.didEndTrackingNotification, object: nil)
         updateScreenGeometry()
         update()
+    }
+
+    func stopMonitoring() {
+        pointerTimer?.invalidate(); pointerTimer = nil
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let globalMouseMonitor { NSEvent.removeMonitor(globalMouseMonitor) }
+        keyMonitor = nil; globalMouseMonitor = nil
+        trackingMenus.removeAll()
+        fsm.cancelTimers()
+        NotificationCenter.default.removeObserver(self)
     }
 
     @objc private func update() {
@@ -99,18 +133,43 @@ final class IslandWindowController: NSWindowController {
     private func pollPointer() {
         guard let panel = window as? IslandPanel, panel.isVisible else { return }
         let mouse = NSEvent.mouseLocation
-        let local = CGPoint(x: mouse.x - panel.frame.minX, y: mouse.y - panel.frame.minY)
-        let rect = panel.currentIslandFrame(nw: state.notchWidth, nh: state.notchHeight)
+        guard let rect = islandFrameInScreen() else { return }
         let hoverRect = !state.hasNotch && state.mode != .expanded ? rect : rect.insetBy(dx: -6, dy: -6)
-        let inside = hoverRect.contains(local)
+        let inside = hoverRect.contains(mouse)
         if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
-        if inside && !wasInIsland { fsm.mouseEntered() }
-        if !inside && (wasInIsland || wasPinned && !state.isPinned) { fsm.mouseLeft() }
+        if trackingMenus.isEmpty {
+            if inside && !wasInIsland { fsm.mouseEntered() }
+            if !inside && (wasInIsland || wasPinned && !state.isPinned) { fsm.mouseLeft() }
+            if !inside && state.mode == .expanded { fsm.ensureCollapseWhenOutside() }
+        }
         wasInIsland = inside
         wasPinned = state.isPinned
-        if !inside && !state.isPinned && state.mode != .expanded && !noticeQueue.isEmpty {
+        if trackingMenus.isEmpty && !inside && !state.isPinned && state.mode != .expanded && !noticeQueue.isEmpty {
             presentNotice(noticeQueue.removeFirst())
         }
+    }
+    private func islandFrameInScreen() -> CGRect? {
+        guard let panel = window as? IslandPanel else { return nil }
+        return panel.currentIslandFrame(nw: state.notchWidth, nh: state.notchHeight)
+            .offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
+    }
+    private func dismissForOutsideClick(at point: NSPoint, anotherWindow: Bool = false) {
+        guard window?.isVisible == true, state.mode == .expanded, trackingMenus.isEmpty,
+              let frame = islandFrameInScreen(), anotherWindow || !frame.contains(point) else { return }
+        // Like Escape and the chevron, an outside click explicitly dismisses a pin.
+        collapse()
+    }
+    @objc private func menuDidBeginTracking(_ note: Notification) {
+        guard let menu = note.object as? NSMenu else { return }
+        trackingMenus.insert(ObjectIdentifier(menu))
+        if state.mode == .expanded { fsm.mouseEntered() }
+        else { fsm.mouseLeft() } // Cancel a pending hover-open while a menu owns input.
+    }
+    @objc private func menuDidEndTracking(_ note: Notification) {
+        guard let menu = note.object as? NSMenu else { return }
+        trackingMenus.remove(ObjectIdentifier(menu))
+        // A menu may have moved the pointer outside without a fresh leave edge.
+        if trackingMenus.isEmpty { pollPointer() }
     }
     @objc func expand() {
         if state.mode != .expanded { state.mode = .expanded }
@@ -129,7 +188,7 @@ final class IslandWindowController: NSWindowController {
     @objc private func announce(_ note: Notification) {
         guard let entry = note.object as? Activity else { return }
         // Do not interrupt someone reading a session or detail list.
-        guard !state.isPinned, !(state.mode == .expanded && wasInIsland) else {
+        guard trackingMenus.isEmpty, !state.isPinned, !(state.mode == .expanded && wasInIsland) else {
             noticeQueue.append(entry); noticeQueue = Array(noticeQueue.suffix(10)); return
         }
         presentNotice(entry)

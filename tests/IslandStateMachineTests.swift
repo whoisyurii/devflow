@@ -52,6 +52,43 @@ enum IslandStateMachineTests {
         fsm.collapse(); fsm.mouseEntered(); fsm.click()
         precondition(fsm.state == .home, "Click opens immediately while the hover delay is pending")
         fsm.cancelTimers()
-        print("Notch hover and collapse: 12 cases passed")
+
+        // Polling repairs a missed exit, but repeated polls must not postpone it.
+        fsm.openedExternally()
+        for _ in 0..<6 {
+            fsm.ensureCollapseWhenOutside()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        precondition(fsm.state == .petit, "Repeated outside checks must still collapse after a missed exit")
+
+        fsm.openedExternally(); fsm.mouseLeft(after: 0.2)
+        for _ in 0..<6 {
+            fsm.ensureCollapseWhenOutside()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        precondition(fsm.state == .home, "Outside recovery must preserve a notice's existing reading timer")
+        fsm.cancelTimers()
+
+        pinned = true
+        fsm.ensureCollapseWhenOutside()
+        try await wait()
+        precondition(fsm.state == .home, "A pin or open menu holds the island during outside polling")
+        pinned = false
+        fsm.ensureCollapseWhenOutside()
+        try await wait()
+        precondition(fsm.state == .petit, "Releasing the hold while already outside restores dismissal")
+
+        fsm.openedExternally(); pinned = true; fsm.collapse()
+        precondition(fsm.state == .petit, "Explicit dismissal works even while pinned")
+
+        pinned = false; fsm.openedExternally(); fsm.mouseLeft()
+        pinned = true
+        try await wait()
+        precondition(fsm.state == .home, "A newly acquired hold prevents an already scheduled collapse")
+        pinned = false; fsm.ensureCollapseWhenOutside()
+        try await wait()
+        precondition(fsm.state == .petit, "An expired held timer cannot block later outside recovery")
+        fsm.cancelTimers()
+        print("Notch hover and collapse: 19 cases passed")
     }
 }

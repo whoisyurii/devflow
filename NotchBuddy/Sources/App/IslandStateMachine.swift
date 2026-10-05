@@ -88,6 +88,13 @@ final class IslandStateMachine {
         }
     }
 
+    /// Recover a missed pointer-exit edge without restarting an existing timer
+    /// (notices deliberately have longer reading time than ordinary hover).
+    func ensureCollapseWhenOutside() {
+        guard state == .home, isHeldOpen?() != true, homeCollapseWork == nil else { return }
+        scheduleHomeCollapse(delay: homeToPetitDelay)
+    }
+
     /// Compact island clicked.
     /// Also accepts `.hidden`: after an alert the island can be on screen while the
     /// FSM never saw the mouse enter (it was already there), and the click must still open it.
@@ -175,7 +182,9 @@ final class IslandStateMachine {
     private func scheduleHomeCollapse(delay: TimeInterval) {
         homeCollapseWork?.cancel()
         let item = DispatchWorkItem { [weak self] in
-            guard let self, self.state == .home, !(self.isHeldOpen?() ?? false) else { return }
+            guard let self else { return }
+            self.homeCollapseWork = nil
+            guard self.state == .home, !(self.isHeldOpen?() ?? false) else { return }
             self.transition(to: .petit)
         }
         homeCollapseWork = item
