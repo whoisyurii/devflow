@@ -49,6 +49,9 @@ enum IslandStateMachineTests {
         try await wait()
         precondition(fsm.state == .home, "External notices retain their longer reading time")
         fsm.cancelTimers()
-        print("Notch hover and collapse: 11 cases passed")
+        fsm.collapse(); fsm.mouseEntered(); fsm.click()
+        precondition(fsm.state == .home, "Click opens immediately while the hover delay is pending")
+        fsm.cancelTimers()
+        print("Notch hover and collapse: 12 cases passed")
     }
 }

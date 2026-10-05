@@ -23,7 +23,7 @@ final class IslandStateMachine {
     /// home → petit delay (seconds). Override for debug.
     var homeToPetitDelay: TimeInterval = 0.2
     /// Brief intent delay avoids expanding when the pointer only crosses the notch.
-    var hoverOpenDelay: TimeInterval = 0.1
+    var hoverOpenDelay: TimeInterval = 0.35
     /// petit → hidden delay (seconds). Override for debug.
     var petitToHiddenDelay: TimeInterval = 60
     /// coucou → petit delay after greeting animation ends (no hover). ~0.6s syncs with canvas collapse.
