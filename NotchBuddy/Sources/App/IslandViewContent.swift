@@ -5,7 +5,8 @@ struct OverviewView: View {
     @ObservedObject var state: AppState
     var body: some View {
         if let notice = state.latestNotice {
-            NotificationPreviewCard(notice: notice) { state.showActivity(notice) }
+            NotificationPreviewCard(notice: notice, action: { state.showActivity(notice) },
+                                    dismiss: { BridgeModel.shared.dismissNotice(notice) })
         } else {
             HStack(spacing: 10) {
                 ZStack(alignment: .topLeading) {
@@ -23,25 +24,52 @@ struct OverviewView: View {
 struct NotificationPreviewCard: View {
     let notice: Activity
     let action: () -> Void
+    let dismiss: () -> Void
     var body: some View {
         CardBackground(wash: notice.title == "Session finished" ? .green : .amber) {
+            HStack(alignment: .top, spacing: 8) {
+                Button(action: action) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: notice.title == "Session finished" ? "checkmark.circle" : "bell.badge")
+                            .font(.system(size: 26)).foregroundColor(Color(hex: "#A78BFA")).frame(width: 38)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(notice.agentName) · \(notice.title)").font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                            if let name = notice.sessionTitle {
+                                Text(name).font(.system(size: 12, weight: .medium)).lineLimit(1).help(name)
+                            }
+                            if let worktree = notice.worktree {
+                                Text("Worktree: \(worktree) · \(notice.branch ?? "Unknown branch")")
+                                    .font(.system(size: 10)).foregroundColor(Color(hex: "#A7ADB8")).lineLimit(1)
+                                    .help("\(notice.cwd ?? worktree) · \(notice.branch ?? "Unknown branch")")
+                            }
+                            Text(notice.pending ?? notice.body).font(.system(size: 11)).lineLimit(2)
+                                .foregroundColor(Color(hex: "#D0D4DC"))
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                HStack(spacing: 4) {
+                    NoticeActionButton(symbol: "arrow.up.right", label: "Open notification", action: action)
+                    NoticeActionButton(symbol: "xmark", label: "Dismiss notification", action: dismiss)
+                }
+            }.padding(12)
+        }
+    }
+
+    private struct NoticeActionButton: View {
+        let symbol: String
+        let label: String
+        let action: () -> Void
+        @State private var isHovered = false
+
+        var body: some View {
             Button(action: action) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: notice.title == "Session finished" ? "checkmark.circle" : "bell.badge")
-                        .font(.system(size: 26)).foregroundColor(Color(hex: "#A78BFA")).frame(width: 38)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("\(notice.agentName) · \(notice.title)").font(.system(size: 11, weight: .semibold))
-                        if let name = notice.sessionTitle { Text(name).font(.system(size: 12, weight: .medium)).lineLimit(1) }
-                        if let worktree = notice.worktree {
-                            Text("Worktree: \(worktree) · \(notice.branch ?? "Unknown branch")")
-                                .font(.system(size: 10)).foregroundColor(Color(hex: "#A7ADB8")).lineLimit(1).help(notice.cwd ?? worktree)
-                        }
-                        Text(notice.pending ?? notice.body).font(.system(size: 11)).lineLimit(2)
-                            .foregroundColor(Color(hex: "#D0D4DC"))
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "arrow.up.right").font(.system(size: 10)).foregroundStyle(.secondary)
-                }.padding(12).contentShape(Rectangle())
-            }.buttonStyle(.plain)
+                Image(systemName: symbol).font(.system(size: 9, weight: .medium))
+                    .foregroundColor(Color(hex: isHovered ? "#D0D4DC" : "#8E939C"))
+                    .frame(width: 22, height: 22)
+                    .background(Color.white.opacity(isHovered ? 0.12 : 0.04), in: Circle())
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain).onHover { isHovered = $0 }
+                .help(label).accessibilityLabel(label)
         }
     }
 }
