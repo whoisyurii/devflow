@@ -1,0 +1,72 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn, execFileSync } from 'node:child_process';
+import { createConnection } from 'node:net';
+import { createInterface } from 'node:readline';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+async function launch(directory) {
+  const child=spawn(process.execPath,[fileURLToPath(new URL('../bridge/main.mjs',import.meta.url)),'--data-dir',directory,'--no-history'],{stdio:['pipe','pipe','pipe']});
+  const requests=new Map();let count=0;let ready;
+  const started=new Promise(resolve=>{ready=resolve;});
+  const exited=new Promise(resolve=>child.on('exit',resolve));
+  child.stderr.on('data',()=>{});
+  createInterface({input:child.stdout}).on('line',line=>{
+    const message=JSON.parse(line);
+    if(message.type==='snapshot')ready();
+    if(message.type==='response'){
+      const request=requests.get(message.id);requests.delete(message.id);
+      if(message.error)request?.reject(new Error(message.error));else request?.resolve(message.result);
+    }
+  });
+  await Promise.race([started,new Promise((_,reject)=>{const timeout=setTimeout(()=>{child.kill();reject(new Error('Bridge failed to start'));},5000);timeout.unref();})]);
+  return {
+    call(method,params={}) {const id=String(++count);return new Promise((resolve,reject)=>{requests.set(id,{resolve,reject});child.stdin.write(JSON.stringify({id,method,params})+'\n');});},
+    async close(){child.stdin.end();await exited;},
+  };
+}
+function event(directory,payload) {
+  return new Promise((resolve,reject)=>{
+    const socket=createConnection(join(directory,'events.sock'));
+    socket.on('connect',()=>socket.write(JSON.stringify(payload)+'\n'));
+    socket.on('end',resolve);socket.on('error',reject);
+  });
+}
+test('real bridge handles Unix socket events, persists answers, and restores unread state',{timeout:15000},async()=>{
+  const directory=await mkdtemp('/tmp/df-');let bridge;
+  try{
+    execFileSync('/usr/bin/git',['init',directory]);
+    await writeFile(join(directory,'settings.json'),JSON.stringify({sessionRepositoryPath:directory,includeRepositoryRoot:true,importHistory:false}));
+    bridge=await launch(directory);
+    assert.equal((await stat(join(directory,'events.sock'))).mode & 0o777,0o600);
+    await event(directory,{agent:'codex',session_id:'abc',cwd:directory,hook_event_name:'Stop',last_assistant_message:'Complete\nanswer',turn_id:'one'});
+    let state=await bridge.call('snapshot');assert.equal(state.sessions.length,1);assert.equal(state.activity.length,1);
+    await bridge.call('markRead',{id:state.activity[0].id});
+    await assert.rejects(bridge.call('executeShell',{command:'should never run'}),/Unknown/);
+    await bridge.close();bridge=null;
+    bridge=await launch(directory);state=await bridge.call('snapshot');
+    assert.equal(state.sessions[0].answers[0].text,'Complete\nanswer');assert.equal(state.activity[0].read,true);
+  }finally{if(bridge)await bridge.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('changing the Boards scope clears old Azure data and notification baselines', {timeout:15000}, async () => {
+  const directory=await mkdtemp('/tmp/df-'); let bridge;
+  try {
+    await writeFile(join(directory,'settings.json'),JSON.stringify({project:'Code',importHistory:false}));
+    await writeFile(join(directory,'state.json'),JSON.stringify({workItemScopeVersion:2,workItems:[{id:'old'}],baselines:{workItems:true},lastSync:'old'}));
+    bridge=await launch(directory);
+    let state=await bridge.call('snapshot');
+    assert.equal(state.settings.workItemProject,'');
+    assert.equal(state.settings.workItemTypes,'');
+    assert.deepEqual(state.workItems,[{id:'old'}]);
+    await bridge.call('configure',{workItemProject:'Boards',workItemTypes:'Bug'});
+    state=await bridge.call('snapshot');
+    assert.equal(state.settings.project,'Code');
+    assert.equal(state.settings.workItemProject,'Boards');
+    assert.deepEqual(state.workItems,[]);
+    assert.deepEqual(state.baselines,{});
+    assert.equal(state.lastSync,null);
+  } finally { if(bridge) await bridge.close(); await rm(directory,{recursive:true,force:true}); }
+});

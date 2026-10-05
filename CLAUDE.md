@@ -1,25 +1,13 @@
-# Coucou — guide for AI coding agents
+# Working on this fork
 
-Coucou is a native macOS app: Mochi, a small animated character living in the MacBook notch, shows Claude Code sessions and a few integrations, and lets the user approve, answer, chat and drop files from the notch.
+Keep Coucou’s original notch interface. Reuse its components and GitHub-style views for Azure; do not introduce a replacement dashboard or a new visual language.
 
-## Where things are
-- `NotchBuddy/Sources/App/` — all Swift code. `NotchBuddy/Resources/sounds/` — the 28 WAV sounds. `NotchBuddy/project.yml` — XcodeGen project (never edit the `.xcodeproj` by hand).
-- `docs/SPEC.md`, `docs/INTEGRATIONS.md` — behaviour, views, states, integrations (in French).
-- `design/prototype/notch-buddy.html` — original prototype, the visual source of truth. `design/captures/` — target screenshots.
-- `docs/*.html` — the GitHub Pages site (privacy, terms, support, legal notice).
+Scope: local Claude Code/Codex sessions and read-only Azure DevOps PRs, builds and work items. Preserve per-session identity, completed answers, existing user hooks and agent approval boundaries. Keep personal settings, Azure metadata, credentials and transcripts out of Git.
 
-## Build
-```
-cd NotchBuddy && xcodegen && xcodebuild -scheme NotchBuddy -configuration Debug build
-```
+- `NotchBuddy/Sources/App`: retained/scoped Coucou UI.
+- `DevFlow/Sources`: app entry, settings, local process bridge and data models.
+- `bridge`: Node MCP client, local state, history import, Unix event relay and hook installer.
+- `scripts/build.sh`: XcodeGen + native macOS build.
+- `scripts/test.sh`: Node/Python tests, including local IPC.
 
-## Rules
-- Swift 6, SwiftUI + AppKit. No third-party dependencies unless truly unavoidable. The character is drawn in code (`Canvas` + `TimelineView`), no Rive/Lottie/images.
-- Secrets live in the Keychain, never on disk or in git.
-- No telemetry. Network calls only to services the user configured.
-- Never block Claude Code: if the app doesn't answer, the hook exits immediately.
-- Never overwrite `~/.claude/settings.json`: dated backup, merge, show the diff, write only after the user confirms.
-- Never send an email or approve a Claude Code permission without an explicit click.
-- Performance: 0 % CPU when the island is hidden.
-- Keep the bundle identifier `fr.louisraille.NotchBuddy` (Keychain items, preferences and permissions depend on it).
-- Visual changes must match the prototype and the screenshots in `design/captures/`.
+Do not add unrelated integrations or ship Coucou’s separately licensed artwork. New UI should use the original island/card/pill components. Hook changes require a preview, merge and backup; never replace another tool’s hooks or trust hooks on the user’s behalf.

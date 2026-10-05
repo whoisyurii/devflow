@@ -1,159 +1,87 @@
-<div align="center">
+# DevFlow — a Coucou fork for Azure DevOps
 
-<img src="NotchBuddy/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="96" alt="Coucou icon">
+A macOS notch companion for a small development team using **Claude Code, Codex and Azure DevOps**. Based on [Coucou](https://github.com/Louis-CFM/coucou) by Louis Raillé.
 
-# Coucou
+This fork keeps Coucou’s 640-point expanding island, compact notch geometry, spring transitions, focused card, shortcut pills, card backgrounds, hover effects, badges, session ticker and Markdown renderer. Its GitHub statistic rows and PR rows are adapted to Azure DevOps. There is no separate dashboard, chat provider, GitHub connection, n8n, mail, music or billing integration.
 
-**A tiny friend that lives in your Mac's notch — or at the top of your screen on Windows — and keeps an eye on your Claude Code sessions.**
+## In the notch
 
-Approve permissions, watch your agents work, drop a file, chat with Claude — all without leaving what you're doing.
+Hover over or click the compact notch to open Coucou’s original two-card overview. Select a pill to move that source into the focus card. Lists and answers expand inside the same notch. Moving away closes it promptly; the pin button keeps it open. Escape folds it away, and the next hover restores your last view. The companion stays available across Spaces, including fullscreen apps.
 
-![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)
-![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows&logoColor=white)
-![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
-![SwiftUI](https://img.shields.io/badge/SwiftUI-native-0A84FF)
-![Tauri 2](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![GitHub stars](https://img.shields.io/github/stars/Louis-CFM/coucou?style=social)
+- **Claude Code / Codex:** separate local sessions, live hook events, permission-needed announcements, completed answers, searchable recent history, Markdown/code rendering and copy. Codex answers can open their original chat. Only the configured repository’s React.BFF tree (including ClientApp), and optionally its root, appears. Linked Git worktrees are included automatically and display their branch and worktree name.
+- **Azure DevOps:** my PRs, requested reviews, a configured colleague’s PRs, all open PRs in the selected repository, reviewer votes, matching build results, **Today / All** pipeline filters plus an independent **Active only** switch. Today uses the queue date in your Mac’s time zone; All shows the loaded history. Rows open Azure for changes and logs.
+- **Work items:** your own open assignments, All / Created today, exact Azure status filtering and title/#ID search. Status and search filters combine with the date choice; counts and a clear action make the active scope visible. Boards can use a different project from the repository, and an optional work-item type list matches your board’s scope. Each developer sees their own assignments; colleague settings apply only to PRs.
+- **Agent choice:** the header menu switches between Codex only, Claude Code only and both. A single agent gets a wider focus card with three stacked shortcuts; both histories are retained and only the selected agent alerts.
+- **Notch:** hover for 350 ms to open; brief pointer crossings leave it closed. Clicking opens immediately. Moving away closes an unpinned notch; clicking outside closes it even when pinned. Menus stay open while choosing an option.
+- **Notifications:** completions, permission requests, input questions and agent failures show the agent, session title, worktree, branch and pending action in the notch. Use the card’s **×** beside its open arrow to dismiss that preview and return to the overview; it remains in Inbox and future alerts still appear. An original 0.72-second soft two-note chime is enabled by default; preview or mute it in Settings → Companion.
+- **Inbox:** durable unread session and Azure updates. New events peek from the notch without interrupting a pinned detail view. macOS banners are optional.
 
-<img src="docs/media/demo.gif" width="760" alt="Coucou in action">
+Azure operations are read-only. DevFlow does not approve agent permissions, merge PRs, edit tickets or run/cancel pipelines.
 
-</div>
+## Build and run
 
----
+Requires macOS 15+, Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen), Node.js 22.16+ and Python 3. The build packages pinned npm dependencies; Node remains a local prerequisite. Homebrew and nvm installations are discovered when launched from Finder.
 
-## Why
-
-Some studios showed off gorgeous notch companions… and never let anyone use them.
-**Coucou is the open version.** Every line of code, every animation, every sound — free to use, read, fork and remix.
-
-Meet **Mochi**: a soft little squircle with big eyes that pops out of your notch, waves hello, follows your cursor with its eyes, gets annoyed when you poke it (and dizzy if you insist), and tells you the moment Claude Code needs you.
-
-## Features
-
-- 🤖 **Claude Code, live** — see every session in your notch: what it reads, edits and runs, step by step. Finished? Mochi does a happy little jump.
-- ✅ **Approve from the notch** — Claude Code permission requests show up with **Allow / Deny**. One click, back to work.
-- 🧑‍💻 **Jump to the right terminal** — open the exact terminal window of a session *(macOS)*.
-- 💬 **Ask Claude anything** — built-in chat, straight from the notch.
-- 📎 **Drop a file on the notch** — Mochi turns into a box and swallows it, then ask a question about it or send it by email *(email: macOS, Mail.app)*.
-- 🪟 **Drag Mochi onto any window** — attach that window as context for Claude *(macOS)*.
-- 🔌 **Integrations** — Stripe payments, n8n workflows, GitHub, Vercel deployments, Resend emails, Notion, Cal.com. Each one gets its own little colored Mochi.
-- 🎭 **A real character** — idle breathing, blinks, eyes on a sphere that follow your mouse, emotes, 28 handcrafted sounds, a greeting on launch.
-- 🫥 **Invisible when idle** — hides away when nothing is running, peeks out when you hover the notch (the top edge of the screen on Windows).
-- 🖥️ **Any Mac, notch or not** — on an iMac, a Mac mini, or a MacBook with its lid closed on an external display, Mochi sits in a small bar at the top of the screen.
-- 🔒 **Private by design** — no telemetry, no account. Keys live in your macOS Keychain or Windows Credential Manager. The app only talks to the services you plug in.
-
-<table>
-<tr>
-<td><img src="docs/media/claude-code.png" alt="Claude Code session"></td>
-<td><img src="docs/media/stripe.png" alt="Stripe payments"></td>
-</tr>
-<tr>
-<td><img src="docs/media/chat.png" alt="Chat with Claude"></td>
-<td><img src="docs/media/dizzy.png" alt="Too many hits"></td>
-</tr>
-</table>
-
-## Install
-
-### Download for macOS
-
-1. Grab the latest `Coucou.zip` from [Releases](https://github.com/Louis-CFM/coucou/releases).
-2. Unzip and move **Coucou.app** to `/Applications`.
-3. Launch. This build isn't notarized by Apple yet, so the first time macOS says it can't verify the developer: open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** (only once).
-
-### Windows
-
-The Windows installer is **temporarily unavailable**. Microsoft Defender wrongly
-flags the unsigned installer as malware; a false-positive report is under review
-at Microsoft and the installer will come back once it is cleared and signed.
-Until then you can [build it from source](#build-from-source).
-
-There is no notch on a PC, so the island slides out of the top edge of the screen
-instead of hiding inside one. See [`windows/README.md`](windows/README.md) for the
-rest of the differences.
-
-### Build from source
-
-**macOS** — requirements: macOS 15+, Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen).
-
-```bash
-brew install xcodegen
-git clone https://github.com/Louis-CFM/coucou.git
-cd coucou/NotchBuddy
-xcodegen
-open NotchBuddy.xcodeproj   # then ⌘R
+```sh
+./scripts/build.sh
+open build/Build/Products/Release/DevFlow.app
 ```
 
-**Windows** — requirements: [Rust](https://rustup.rs), Node 20+, MSVC build tools.
+Builds are optimized for daily use. For debugging, run `CONFIGURATION=Debug ./scripts/build.sh`.
 
-```powershell
-git clone https://github.com/Louis-CFM/coucou.git
-cd coucou/windows
-npm install
-npm run pack                # installer lands in windows/release/
+Copy the resulting app to `~/Applications` for everyday use. Add it to macOS **Login Items** if you want it to start at login. The build receives a local ad-hoc signature. This is an internal development build, not a Developer ID signed or notarized release.
+
+## Azure setup
+
+Open **Settings → Azure DevOps**, enter your organization, project and repository, and choose **Save and connect**. Leave **My email** empty to use the signed-in Azure account. Enter your colleague’s Azure identity email to enable their PR filter. In the Work items section, set Project when Boards live elsewhere, and optionally a comma-separated Types list from that board. A blank work-item project uses the repository project.
+
+The default is the official [`@azure-devops/mcp`](https://github.com/microsoft/azure-devops-mcp) server and its normal Microsoft browser/localhost authentication. A long-lived local MCP process handles all polling while the app runs. DevFlow does not extract or assume a reusable token from Claude or Codex. On launch, connect once; the Microsoft server controls when reauthentication is needed.
+
+Existing Azure CLI authentication is an alternative. An optional PAT is stored in macOS Keychain under `devflow.azure-devops`, never in settings. Bearer-token environment mode is also available. The configured organization and project must be accessible to that identity.
+
+The Reviews view includes open PRs where you are an assigned reviewer, including ones you already voted on; hover a row for reviewer votes. PR build badges only describe matching PR merge-commit builds; they are **not** a claim that every Azure branch policy has passed. Pipeline and work-item queries are bounded: up to 100 recent builds plus 100 running and 100 queued builds, and up to 200 personal open work items per query (all recent assignments and items created today). PR discovery paginates up to 2,000 open PRs.
+
+## Local session hooks
+
+In **Settings → Local sessions**, choose your repository checkout, keep Project folder as `React.BFF`, and save. Leave **Include sessions at the repository root** on to include root-started chats too. Scope uses Git common-directory identity, including separate, nested and detached worktrees; unrelated repositories and sibling folders are excluded. Pick the AI agent you want to see.
+
+Then open **Preview hook installation**. Installation merges DevFlow command hooks into `~/.claude/settings.json` and `~/.codex/hooks.json`, preserves other tools’ hooks and creates dated backups. It refuses installation if either configuration changed after preview.
+
+Start a new Claude Code session after installation. **Review and trust the new hook definitions in Codex’s Hooks settings or `/hooks`** where supported by your client. DevFlow does not bypass that trust step. A client that does not run these hooks still appears through local transcript import, without guaranteed immediate live status or completion banners.
+
+The relay sends events through a private local Unix socket, times out after 150 ms and always leaves agent permissions to the originating client. It forwards concise questions/approval descriptions but does not copy raw tool arguments, outputs or permission decisions. Recent history imports the 100 latest matching transcripts for each agent, examining at most 2,000 recent files per agent, with a 2 MiB tail limit per large transcript. It retains up to 200 sessions, 50 completed answers and 60 status steps per session, and 500 inbox entries. Missing or stale active-state evidence is shown as unknown; imported old answers do not create a flood of notifications.
+
+System banners additionally require macOS notification permission. Use **Enable macOS notifications** in Companion settings and allow DevFlow in macOS; the visible status reports whether permission is available. Notch previews and app-played sound work independently of system banner permission. A pinned or actively read notch queues new previews while keeping updates in the Inbox.
+
+### Worktree and push milestones
+
+The installed helper is an explicit workflow integration. Call it after your setup script has finished or your push has succeeded:
+
+```sh
+python3 "$HOME/Library/Application Support/DevFlow/devflow-event.py" worktree-ready --path /path/to/worktree
+python3 "$HOME/Library/Application Support/DevFlow/devflow-event.py" branch-pushed --path /path/to/repo --remote origin --agent codex
 ```
 
-## Setup
+Use `--agent codex` or `--agent claude` (the default) so the milestone follows that agent’s visibility preference. The push helper verifies the remote branch matches local HEAD before announcing it. Arbitrary terminal pushes/worktree setup are not automatically inferred. The helper exits quietly when the companion is absent.
 
-Click the Coucou icon in the menu bar (macOS) or in the system tray (Windows) → **Settings…**
+## Local data and troubleshooting
 
-| What | Why | Where the key goes |
-|---|---|---|
-| **Claude Code hooks** | live sessions and approvals | **Install hooks** — Coucou backs up `~/.claude/settings.json`, merges its hooks and shows you the diff before writing anything |
-| **Anthropic API key** | chat and questions about files | Keychain / Windows Credential Manager |
-| Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the integration pills | Keychain / Windows Credential Manager, all optional |
+Settings, cached Azure data, session answers and the event socket live in `~/Library/Application Support/DevFlow` (directory mode 0700; data and socket 0600). The relay scripts are installed there too. Nothing in this directory belongs in Git. No telemetry or model API calls are added by this fork.
 
-If Coucou isn't running, the hook exits immediately: **Claude Code is never blocked.**
+If sign-in needs attention, use Settings to disconnect and connect again. Each Azure feed retains its previous data on a refresh failure; errors and the last successful refresh time remain visible. Polling slows down after failures. Closing the app shuts down its MCP child and socket.
 
-## Things to try
+To remove DevFlow hooks, quit the app and remove only commands referring to `Application Support/DevFlow/devflow-hook.py` from the two hook files. Dated `.devflow-backup-*` files can help compare the previous configuration; do not overwrite unrelated later changes.
 
-| Do this | Mochi does that |
-|---|---|
-| Hover the notch (top edge on Windows) | peeks out and says hi 👋 |
-| Click it | opens |
-| Hover Mochi | blinks, eyes grow |
-| Click Mochi | squish + annoyed |
-| Click 3 times fast | 😵‍💫 dizzy for a few seconds |
-| Drag a file onto the island | turns into a box and swallows it |
-| Drag Mochi onto a window *(macOS)* | attaches it as context |
+## Verification
 
-## How it works
+```sh
+./scripts/test.sh
+```
 
-**macOS**
+Tests cover real linked/detached Git worktrees, project exclusion, per-agent visibility, contextual permission/input/completion notices, silent history, original chime bounds, concurrent sessions, answer persistence and replay, history import, hook merging/backups/stale previews, the real Unix relay and daemon, Azure parsing, build matching, independent refresh baselines, personal cross-project work-item scope, status/search combinations, cache migration, local-day pipeline filters (including DST), hover/close behavior and cache recovery. Native compilation uses Swift 6; interface checks include both/single-agent notch layouts, context-rich previews, Azure lists and session answers. Both real Codex and Claude Code CLI smoke runs were checked against the installed relay; pending-input payloads were also exercised through the installed relay without approving any agent action. On this development Mac, notch previews and sound were verified; optional system banner authorization remains to be enabled in macOS.
 
-- **Island**: a borderless `NSPanel` hugging the notch, driven by a small state machine (`hidden → petit → home`).
-- **Character**: drawn in SwiftUI `Canvas` + `TimelineView` at 60 fps — squircle body, eyes projected on a sphere, spring animations. No Rive, no Lottie, no images.
-- **Claude Code**: a tiny `nb-hook` script receives hook events and forwards them over a Unix socket to the app. For approvals it waits for your click, then answers the hook.
-- **Integrations**: lightweight pollers, paused when nothing is watching.
-- **Sounds**: 28 short WAVs played through preloaded `AVAudioPlayer`s.
+## Upstream and licensing
 
-The macOS app is native Swift 6 / SwiftUI / AppKit with **zero third-party dependencies**.
+Source code retains the [MIT license](LICENSE). Original reused UI code remains under `NotchBuddy/Sources/App`; the native bridge/settings and build configuration are in `DevFlow`, and the local MCP/event bridge is in `bridge`.
 
-**Windows**
-
-- A [Tauri 2](https://tauri.app) app (Rust + TypeScript): the island is a transparent, always-on-top window that never steals focus, Mochi is drawn in Canvas 2D with the same shapes, timings and sounds as on the Mac.
-- Claude Code hooks go through a tiny `coucou-hook.exe` and a named pipe; keys live in Windows Credential Manager.
-- Details and differences in [`windows/README.md`](windows/README.md).
-
-## Contributing
-
-Issues and PRs are very welcome — new integrations, new emotes, new sounds, bug fixes. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Credits
-
-Built by [Louis Raillé](https://louisraille.fr) with Claude Code.
-Inspired by the notch-companion concepts shared by design studios — this project is independent and not affiliated with any of them.
-
-## License
-
-- **Code:** [MIT](LICENSE) — use it, fork it, learn from it, just keep the copyright notice.
-- **Name, Mochi character, icon, sounds and media:** © Louis Raillé, all rights reserved — see [LICENSE-ASSETS.md](LICENSE-ASSETS.md). Shipping your own fork? Give it your own name and character.
-
-<div align="center">
-
-**If Mochi made you smile, a ⭐ helps a lot.**
-
-[Website](https://louis-cfm.github.io/coucou/) · [Privacy](https://louis-cfm.github.io/coucou/privacy.html) · [Terms](https://louis-cfm.github.io/coucou/terms.html) · [Support](https://louis-cfm.github.io/coucou/support.html)
-
-</div>
+Coucou separately reserves its name, Mochi character, artwork, icons and sounds in [LICENSE-ASSETS.md](LICENSE-ASSETS.md). This fork preserves the UI code and layout, uses the name DevFlow and source-specific system symbols, and does not redistribute those protected assets. There are no release uploads containing Coucou artwork.

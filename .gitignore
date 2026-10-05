@@ -1,20 +1,13 @@
-# Build artefacts
-NotchBuddy/build/
-NotchBuddy/NotchBuddy.xcodeproj/project.xcworkspace/xcuserdata/
-NotchBuddy/NotchBuddy.xcodeproj/xcuserdata/
-*.xcuserstate
-
-# Xcode DerivedData (outside repo — listed for clarity)
-DerivedData/
-
-# macOS
 .DS_Store
-.AppleDouble
-.LSOverride
-
-# iCloud stubs
-*.icloud
-
-# Local only (never published)
-.claude/
-_prive/
+**/node_modules/
+DevFlow/Resources/bridge/
+DevFlow/Resources/Info.plist
+*.xcodeproj/
+build/
+.build/
+*.log
+.env*
+settings.json
+state.json
+*.sock
+__pycache__/

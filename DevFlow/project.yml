@@ -1,0 +1,43 @@
+name: DevFlow
+options:
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: false
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGNING_ALLOWED: NO
+    ENABLE_HARDENED_RUNTIME: YES
+schemes:
+  DevFlow:
+    build:
+      targets:
+        DevFlow: all
+targets:
+  DevFlow:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: ../NotchBuddy/Sources/App
+      - path: Resources/DevFlowChime.wav
+        buildPhase: resources
+      - path: Resources/bridge
+        type: folder
+        buildPhase: resources
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleName: DevFlow
+        CFBundleDisplayName: DevFlow
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSUIElement: true
+        NSHighResolutionCapable: true
+        LSApplicationCategoryType: public.app-category.developer-tools
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.devflow.companion
+        PRODUCT_NAME: DevFlow
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_APP_SANDBOX: NO
